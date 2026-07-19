@@ -86,6 +86,7 @@ export class GameScene extends Phaser.Scene {
 
         // --- Paused state ---
         this.paused = false;
+        this._roundEnding = false;
 
         // Initial wave after short delay
         this.time.delayedCall(2000, () => this.spawnWave());
@@ -249,6 +250,14 @@ export class GameScene extends Phaser.Scene {
         bullet.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
         bullet.setDepth(5);
 
+        // Auto-deactivate after 3s (prevents bullet leak)
+        this.time.delayedCall(3000, () => {
+            if (bullet.active) {
+                bullet.setActive(false).setVisible(false);
+                bullet.body.stop();
+            }
+        });
+
         this.cameras.main.shake(50, 0.002);
     }
 
@@ -268,6 +277,14 @@ export class GameScene extends Phaser.Scene {
             bullet.setPosition(tank.x + Math.cos(angle) * 20, tank.y + Math.sin(angle) * 20);
             bullet.setVelocity(Math.cos(angle) * 350, Math.sin(angle) * 350);
             bullet.setDepth(5);
+
+            // Auto-deactivate after 3s
+            this.time.delayedCall(3000, () => {
+                if (bullet.active) {
+                    bullet.setActive(false).setVisible(false);
+                    bullet.body.stop();
+                }
+            });
         }
     }
 
@@ -515,6 +532,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     endRound() {
+        // Prevent re-entrancy (called every frame when timer <= 0)
+        if (this._roundEnding) return;
+        this._roundEnding = true;
+
         this.roundTimerEvent.destroy();
         this.waveTimerEvent.destroy();
         this.shieldRegenEvent.destroy();
@@ -534,6 +555,7 @@ export class GameScene extends Phaser.Scene {
         GameData.currentRound++;
         GameData.waveNumber = 0;
         GameData.roundTimer = 180;
+        this._roundEnding = false;
 
         // Clear old zerg
         this.zergGroup.clear(true, false);
