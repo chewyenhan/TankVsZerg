@@ -46,6 +46,17 @@ const config = {
 const game = new Phaser.Game(config);
 window.game = game;
 
+// Make canvas focusable for keyboard input
+game.events.on('ready', () => {
+    const canvas = document.querySelector('canvas');
+    if (canvas) {
+        canvas.setAttribute('tabindex', '0');
+        canvas.focus();
+        // Re-focus on any click to ensure keyboard input works
+        canvas.addEventListener('click', () => canvas.focus());
+    }
+});
+
 // DOM button handlers
 window.resumeGame = function () {
     const gs = game.scene.getScene('GameScene');
