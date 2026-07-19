@@ -19,10 +19,11 @@ export class GameScene extends Phaser.Scene {
         // Split screen or shared arena
         if (GameData.displayMode === 'split') {
             this.cameras.main.setViewport(0, 0, 400, 600);
-            this.cameras.secondary.setViewport(400, 0, 400, 600);
-            this.cameras.secondary.setVisible(true).setScrollFactor(0);
-        } else {
-            this.cameras.secondary.setVisible(false);
+            // Create secondary camera for P2 view
+            if (!this.cameras.cameras[1]) {
+                this.cameras.add(400, 0, 400, 600);
+            }
+            this.cameras.cameras[1].setScrollFactor(0);
         }
 
         // Background
@@ -40,12 +41,12 @@ export class GameScene extends Phaser.Scene {
         this.zergGroup = this.physics.add.group({ collideGroup: true });
 
         // --- Particles ---
-        this.emitter = this.add.particles('explosion').createEmitter({
+        this.emitter = this.add.particles(0, 0, 'explosion', {
             speed: { min: 50, max: 150 },
             scale: { start: 0.6, end: 0 },
             alpha: { start: 1, end: 0 },
             lifespan: 400,
-            maxAliveParticles: 20,
+            emitting: false,
             tint: [0xff4400, 0xffaa00, 0xff2200],
         });
 
@@ -72,6 +73,13 @@ export class GameScene extends Phaser.Scene {
             delay: 1000, callback: this.regenShields, callbackScope: this, loop: true,
         });
 
+        // --- Create animations (once per texture, on global anims manager) ---
+        this.createAnimIfNeeded('zerg_lings', 'walk_zerg_lings', 6);
+        this.createAnimIfNeeded('zerg_roach', 'walk_zerg_roach', 6);
+        this.createAnimIfNeeded('zerg_hydra', 'fly_zerg_hydra', 4);
+        this.createAnimIfNeeded('zerg_drone', 'fly_zerg_drone', 4);
+        this.createAnimIfNeeded('zerg_ultra', 'stomp_zerg_ultra', 3);
+
         // --- Fire cooldowns ---
         this.p1FireTimer = 0;
         this.p2FireTimer = 0;
@@ -80,7 +88,7 @@ export class GameScene extends Phaser.Scene {
         this.paused = false;
 
         // Initial wave after short delay
-        this.time.delayCall(2000, () => this.spawnWave());
+        this.time.delayedCall(2000, () => this.spawnWave());
 
         // Announce
         this.showWaveAnnounce(`ROUND ${GameData.currentRound}`);
@@ -132,6 +140,9 @@ export class GameScene extends Phaser.Scene {
         this.handleTank(this.tank1, this.keys, 'p1', delta);
         // --- Player 2 ---
         this.handleTank(this.tank2, this.keys, 'p2', delta);
+
+        // --- Draw HP bars (above tanks) ---
+        this.drawHPBars();
 
         // --- Pause ---
         if (Phaser.Input.Keyboard.JustDown(this.keys.escape)) {
@@ -223,7 +234,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     fireBullet(tank, bulletGroup, player) {
-        const bullet = bulletGroup.get(tank.x, tank.y, true);
+        const tex = player === 'p1' ? 'bullet_red' : 'bullet_blue';
+        const bullet = bulletGroup.get(tank.x, tank.y, tex);
         if (!bullet) return;
 
         const angle = tank.rotation;
@@ -241,12 +253,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     fireBurst(tank, player) {
-        const bulletGroup = player === '1' ? this.bulletsP1 : this.bulletsP2;
+        const bulletGroup = player === 'p1' ? this.bulletsP1 : this.bulletsP2;
         const baseAngle = tank.rotation;
 
         for (let i = -1; i <= 1; i++) {
             const angle = baseAngle + i * 0.2;
-            const bullet = bulletGroup.get(tank.x, tank.y, true);
+            const tex = player === 'p1' ? 'bullet_red' : 'bullet_blue';
+            const bullet = bulletGroup.get(tank.x, tank.y, tex);
             if (!bullet) continue;
 
             bullet.setData('damage', 8);
@@ -355,23 +368,18 @@ export class GameScene extends Phaser.Scene {
         tank.shieldBar.destroy();
         this.playSound('explosion_large');
 
-        const cam = tank.player === 1 ? this.cameras.main : this.cameras.secondary;
-        cam.fadeOut(500, 255, 0, 0);
+        // Flash main camera (both tanks share it in shared mode)
+        this.cameras.main.flash(500, 255, 0, 0);
     }
 
     spawnExplosion(x, y) {
-        this.emitter.emitParticleAt(x, y, 8);
+        this.emitter.explode(8, x, y);
         this.cameras.main.shake(150, 0.02);
     }
 
-    spawnHitEffect(x, y, color) {
-        const g = this.add.graphics().setDepth(100);
-        g.fillStyle(color, 1);
-        g.fillCircle(x, y, 5);
-        this.tweens.add({
-            targets: g, alpha: 0, scale: 0, duration: 200,
-            onComplete: () => g.destroy(),
-        });
+    spawnHitEffect(x, y, _color) {
+        // Small particle burst at hit location
+        this.emitter.explode(2, x, y);
     }
 
     // --- Wave spawning ---
@@ -399,12 +407,11 @@ export class GameScene extends Phaser.Scene {
                 }
 
                 // Walk/fly animation
-                if (tex === 'zerg_lings' || tex === 'zerg_roach') {
-                    this.makeAnim(z, 'walk', 6);
-                } else if (tex === 'zerg_hydra' || tex === 'zerg_drone') {
-                    this.makeAnim(z, 'fly', 4);
-                } else if (tex === 'zerg_ultra') {
-                    this.makeAnim(z, 'stomp', 3);
+                const animKey = (tex === 'zerg_lings' || tex === 'zerg_roach') ? 'walk_' + tex :
+                                (tex === 'zerg_hydra' || tex === 'zerg_drone') ? 'fly_' + tex :
+                                (tex === 'zerg_ultra') ? 'stomp_' + tex : null;
+                if (animKey && this.anims.exists(animKey)) {
+                    z.play(animKey);
                 }
 
                 // Re-target periodically
@@ -472,6 +479,17 @@ export class GameScene extends Phaser.Scene {
         return d1 < d2 ? t1 : t2;
     }
 
+    createAnimIfNeeded(tex, key, rate) {
+        if (this.anims.exists(key)) return;
+        const texture = this.textures.get(tex);
+        const frameNames = texture.getFrameNames();
+        if (frameNames.length > 0) {
+            // Build frame objects with texture key reference
+            const frames = frameNames.map(name => ({ key: tex, frame: name }));
+            this.anims.create({ key, frames, frameRate: rate, repeat: -1 });
+        }
+    }
+
     makeAnim(zerg, key, rate) {
         const tex = zerg.texture.key;
         const frames = this.textures.get(tex).getFrameNames();
@@ -508,7 +526,7 @@ export class GameScene extends Phaser.Scene {
         if (GameData.p1RoundsWon >= 2 || GameData.p2RoundsWon >= 2 || GameData.currentRound >= 3) {
             this.endMatch();
         } else {
-            this.time.delayCall(2000, () => this.startNewRound());
+            this.time.delayedCall(2000, () => this.startNewRound());
         }
     }
 
@@ -617,7 +635,7 @@ export class GameScene extends Phaser.Scene {
         txt.style.animation = 'none';
         txt.offsetHeight;
         txt.style.animation = '';
-        this.time.delayCall(2000, () => { el.style.display = 'none'; });
+        this.time.delayedCall(2000, () => { el.style.display = 'none'; });
     }
 
     updateHUD() {

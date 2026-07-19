@@ -24,7 +24,7 @@ export class PreloadScene extends Phaser.Scene {
             fill.fillRect(cx - 118, cy - 13, 236 * value, 26);
         });
 
-        this.time.delayCall(400, () => {
+        this.time.delayedCall(400, () => {
             box.destroy();
             fill.destroy();
             this.generateTextures();
@@ -82,7 +82,14 @@ export class PreloadScene extends Phaser.Scene {
             ctx.restore();
         }
 
-        this.textures.addCanvas(key, canvas, frames);
+        // Phaser 3: addCanvas creates a single-frame texture, then we add frame data
+        this.textures.addCanvas(key, canvas);
+        const texture = this.textures.get(key);
+        // Remove the default __BASE frame and add per-sprite frames
+        if (texture.has('__BASE')) texture.remove('__BASE');
+        for (let i = 0; i < frames; i++) {
+            texture.add(String(i), 0, i * fw, 0, fw, fh);
+        }
     }
 
     makeSingle(key, w, h, drawFn) {

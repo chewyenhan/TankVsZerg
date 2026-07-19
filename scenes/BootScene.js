@@ -17,6 +17,8 @@ export class BootScene extends Phaser.Scene {
         window.drawRoach = drawRoach;
         window.drawUltra = drawUltra;
         window.drawExplosion = drawExplosion;
+
+        this.scene.start('PreloadScene');
     }
 }
 
