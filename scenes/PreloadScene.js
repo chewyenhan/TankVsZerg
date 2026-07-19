@@ -33,7 +33,6 @@ export class PreloadScene extends Phaser.Scene {
     }
 
     generateTextures() {
-        // Drawing functions are on window (set by BootScene.create)
         const drawTank = window.drawTank;
         const drawBullet = window.drawBullet;
         const drawZergling = window.drawZergling;
@@ -43,25 +42,25 @@ export class PreloadScene extends Phaser.Scene {
         const drawUltra = window.drawUltra;
         const drawExplosion = window.drawExplosion;
 
-        if (!drawTank) return; // Safety check
+        if (!drawTank) return;
 
-        // Tanks: 12 direction frames
-        this.makeAtlas('tank_p1', 56, 48, 12, (ctx, w, h, f) => drawTank(ctx, 0xcc2222, w, h, f));
-        this.makeAtlas('tank_p2', 56, 48, 12, (ctx, w, h, f) => drawTank(ctx, 0x2244cc, w, h, f));
+        // Tanks: 12 direction frames (64×56 each)
+        this.makeAtlas('tank_p1', 64, 56, 12, (ctx, w, h, f) => drawTank(ctx, 0xcc2222, w, h, f));
+        this.makeAtlas('tank_p2', 64, 56, 12, (ctx, w, h, f) => drawTank(ctx, 0x2244cc, w, h, f));
 
-        // Bullets
-        this.makeSingle('bullet_red', 10, 10, (ctx, w, h) => drawBullet(ctx, 0xffaa00, w, h));
-        this.makeSingle('bullet_blue', 10, 10, (ctx, w, h) => drawBullet(ctx, 0x4488ff, w, h));
-        this.makeSingle('bullet_green', 10, 10, (ctx, w, h) => drawBullet(ctx, 0x44ff44, w, h));
+        // Bullets (14×14 glowing orbs)
+        this.makeSingle('bullet_red', 14, 14, (ctx, w, h) => drawBullet(ctx, 0xff6644, w, h));
+        this.makeSingle('bullet_blue', 14, 14, (ctx, w, h) => drawBullet(ctx, 0x4488ff, w, h));
+        this.makeSingle('bullet_green', 14, 14, (ctx, w, h) => drawBullet(ctx, 0x44ff44, w, h));
 
-        // Zerg (2 frames walk cycle)
-        this.makeAtlas('zerg_lings', 32, 28, 2, drawZergling);
-        this.makeAtlas('zerg_hydra', 40, 32, 2, drawHydra);
-        this.makeAtlas('zerg_drone', 30, 28, 2, drawDrone);
-        this.makeAtlas('zerg_roach', 40, 32, 2, drawRoach);
-        this.makeAtlas('zerg_ultra', 64, 52, 2, drawUltra);
+        // Zerg — 4-frame animations for smoother movement
+        this.makeAtlas('zerg_lings', 40, 30, 4, drawZergling);
+        this.makeAtlas('zerg_hydra', 48, 38, 4, drawHydra);
+        this.makeAtlas('zerg_drone', 40, 30, 4, drawDrone);
+        this.makeAtlas('zerg_roach', 48, 38, 4, drawRoach);
+        this.makeAtlas('zerg_ultra', 72, 56, 4, drawUltra);
 
-        // Explosion (8 frames)
+        // Explosion (8 frames, 32×32)
         this.makeAtlas('explosion', 32, 32, 8, drawExplosion);
 
         // Background
@@ -82,10 +81,8 @@ export class PreloadScene extends Phaser.Scene {
             ctx.restore();
         }
 
-        // Phaser 3: addCanvas creates a single-frame texture, then we add frame data
         this.textures.addCanvas(key, canvas);
         const texture = this.textures.get(key);
-        // Remove the default __BASE frame and add per-sprite frames
         if (texture.has('__BASE')) texture.remove('__BASE');
         for (let i = 0; i < frames; i++) {
             texture.add(String(i), 0, i * fw, 0, fw, fh);
@@ -107,13 +104,16 @@ export class PreloadScene extends Phaser.Scene {
         canvas.height = 600;
         const ctx = canvas.getContext('2d');
 
+        // Deep space gradient
         const grad = ctx.createLinearGradient(0, 0, 0, 600);
-        grad.addColorStop(0, '#0a0a2e');
-        grad.addColorStop(1, '#1a1a2e');
+        grad.addColorStop(0, '#050520');
+        grad.addColorStop(0.5, '#0a0a2e');
+        grad.addColorStop(1, '#0d0d1a');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, 800, 600);
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        // Grid lines (subtle)
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
         ctx.lineWidth = 1;
         for (let x = 0; x < 800; x += 40) {
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 600); ctx.stroke();
@@ -122,12 +122,43 @@ export class PreloadScene extends Phaser.Scene {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(800, y); ctx.stroke();
         }
 
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        for (let i = 0; i < 100; i++) {
+        // Stars (varied brightness + color)
+        for (let i = 0; i < 150; i++) {
+            const sx = Math.random() * 800;
+            const sy = Math.random() * 600;
+            const sr = Math.random() * 1.5 + 0.3;
+            const brightness = Math.random();
+            const hue = Math.random();
+            let starColor;
+            if (hue < 0.7) starColor = `rgba(255,255,255,${0.3 + brightness * 0.7})`;
+            else if (hue < 0.85) starColor = `rgba(200,220,255,${0.3 + brightness * 0.7})`;
+            else starColor = `rgba(255,240,200,${0.3 + brightness * 0.7})`;
+
+            ctx.fillStyle = starColor;
             ctx.beginPath();
-            ctx.arc(Math.random() * 800, Math.random() * 600, Math.random() * 1.5 + 0.3, 0, Math.PI * 2);
+            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
             ctx.fill();
+
+            // Occasional cross sparkle
+            if (brightness > 0.85) {
+                ctx.strokeStyle = starColor;
+                ctx.lineWidth = 0.3;
+                ctx.beginPath(); ctx.moveTo(sx - sr*2, sy); ctx.lineTo(sx + sr*2, sy); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sx, sy - sr*2); ctx.lineTo(sx, sy + sr*2); ctx.stroke();
+            }
         }
+
+        // Nebula blobs
+        const drawNebula = (x, y, radius, color) => {
+            const ng = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            ng.addColorStop(0, color);
+            ng.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = ng;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+        };
+        drawNebula(120, 100, 120, 'rgba(30,10,60,0.15)');
+        drawNebula(650, 450, 160, 'rgba(10,20,50,0.12)');
+        drawNebula(400, 300, 200, 'rgba(15,10,30,0.08)');
 
         this.textures.addCanvas('bg_starfield', canvas);
     }

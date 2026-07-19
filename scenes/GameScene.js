@@ -1,5 +1,7 @@
 /**
  * GameScene — Main gameplay. Handles tanks, zerg, bullets, waves, collisions, scoring.
+ *
+ * Player ID convention: 'p1' / 'p2' (string, used everywhere consistently)
  */
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -16,10 +18,9 @@ export class GameScene extends Phaser.Scene {
         document.getElementById('wave-announce').style.display = 'none';
         document.getElementById('gameover-overlay').style.display = 'none';
 
-        // Split screen or shared arena
+        // Split screen
         if (GameData.displayMode === 'split') {
             this.cameras.main.setViewport(0, 0, 400, 600);
-            // Create secondary camera for P2 view
             if (!this.cameras.cameras[1]) {
                 this.cameras.add(400, 0, 400, 600);
             }
@@ -29,16 +30,16 @@ export class GameScene extends Phaser.Scene {
         // Background
         this.bg = this.add.tileSprite(400, 300, 800, 600, 'bg_starfield');
 
-        // --- Create tanks ---
-        this.tank1 = this.createTank(150, 300, 'tank_p1', 1);
-        this.tank2 = this.createTank(650, 300, 'tank_p2', 2);
+        // --- Create tanks (player ID is 'p1'/'p2' string) ---
+        this.tank1 = this.createTank(150, 300, 'tank_p1', 'p1');
+        this.tank2 = this.createTank(650, 300, 'tank_p2', 'p2');
 
         // --- Bullet pools ---
         this.bulletsP1 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
         this.bulletsP2 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
 
-        // --- Zerg group ---
-        this.zergGroup = this.physics.add.group({ collideGroup: true });
+        // --- Zerg group (NO self-collision — zerg overlap each other) ---
+        this.zergGroup = this.physics.add.group();
 
         // --- Particles ---
         this.emitter = this.add.particles(0, 0, 'explosion', {
@@ -73,56 +74,50 @@ export class GameScene extends Phaser.Scene {
             delay: 1000, callback: this.regenShields, callbackScope: this, loop: true,
         });
 
-        // --- Create animations (once per texture, on global anims manager) ---
+        // --- Create animations ---
         this.createAnimIfNeeded('zerg_lings', 'walk_zerg_lings', 6);
         this.createAnimIfNeeded('zerg_roach', 'walk_zerg_roach', 6);
         this.createAnimIfNeeded('zerg_hydra', 'fly_zerg_hydra', 4);
         this.createAnimIfNeeded('zerg_drone', 'fly_zerg_drone', 4);
         this.createAnimIfNeeded('zerg_ultra', 'stomp_zerg_ultra', 3);
 
-        // --- Fire cooldowns ---
-        this.p1FireTimer = 0;
-        this.p2FireTimer = 0;
-
-        // --- Paused state ---
+        // --- State ---
         this.paused = false;
         this._roundEnding = false;
+        this._debugOnce = true;
 
-        // Initial wave after short delay
+        // Initial wave
         this.time.delayedCall(2000, () => this.spawnWave());
 
-        // Announce
         this.showWaveAnnounce(`ROUND ${GameData.currentRound}`);
         this.updateHUD();
     }
 
-    createTank(x, y, texture, playerNum) {
+    createTank(x, y, texture, playerId) {
         const tank = this.physics.add.sprite(x, y, texture);
         tank.setCollideWorldBounds(true);
         tank.setScale(1.2);
         tank.setDepth(10);
-        tank.player = playerNum;
+        tank.player = playerId;       // 'p1' or 'p2'
         tank.hp = 100;
         tank.maxHp = 100;
         tank.shield = 0;
         tank.maxShield = 30;
-        tank.invincible = 2000; // 2s grace
+        tank.invincible = 1500;       // 1.5s spawn protection
         tank.alive = true;
         tank.score = 0;
         tank.kills = 0;
         tank.streak = 0;
         tank.maxStreak = 0;
 
-        // HP bar (above tank)
         tank.hpBar = this.add.graphics().setDepth(11);
-        // Shield bar
         tank.shieldBar = this.add.graphics().setDepth(11);
 
         return tank;
     }
 
     setupCollisions() {
-        this.physics.add.collider(this.zergGroup, this.zergGroup);
+        // NOTE: NO zerg-zerg collider — they overlap to reach tanks
         this.physics.add.overlap(this.bulletsP1, this.zergGroup, this.bulletHitZerg, null, this);
         this.physics.add.overlap(this.bulletsP2, this.zergGroup, this.bulletHitZerg, null, this);
         this.physics.add.overlap(this.zergGroup, this.tank1, this.zergHitTank, null, this);
@@ -137,32 +132,30 @@ export class GameScene extends Phaser.Scene {
         const dt = delta / 1000;
         this.bg.tilePositionX -= 20 * dt;
 
-        // --- Player 1 ---
         this.handleTank(this.tank1, this.keys, 'p1', delta);
-        // --- Player 2 ---
         this.handleTank(this.tank2, this.keys, 'p2', delta);
 
-        // --- Draw HP bars (above tanks) ---
         this.drawHPBars();
+        this.updateHUD();
 
-        // --- Pause ---
+        // Pause
         if (Phaser.Input.Keyboard.JustDown(this.keys.escape)) {
             this.togglePause();
         }
 
-        // --- Death check ---
+        // Death check
         if (this.tank1.hp <= 0 && this.tank1.alive) {
             this.tank1.alive = false;
-            this.onTankDeath(this.tank1);
+            this.onTankDeath(this.tank1, 'p1');
             GameData.p2RoundsWon++;
         }
         if (this.tank2.hp <= 0 && this.tank2.alive) {
             this.tank2.alive = false;
-            this.onTankDeath(this.tank2);
+            this.onTankDeath(this.tank2, 'p2');
             GameData.p1RoundsWon++;
         }
 
-        // --- Round end ---
+        // Round end
         if (!this.tank1.alive || !this.tank2.alive || GameData.roundTimer <= 0) {
             this.endRound();
         }
@@ -224,7 +217,7 @@ export class GameScene extends Phaser.Scene {
         const shieldKey = player === 'p1' ? keys.p1Shield : keys.p2Shield;
         if (Phaser.Input.Keyboard.JustDown(shieldKey) && tank.shield < tank.maxShield) {
             tank.shield = Math.min(tank.maxShield, tank.shield + 15);
-            tank.invincible = 1000;
+            tank.invincible = Math.max(tank.invincible, 500);
             this.playSound('shield');
             const color = player === 'p1' ? [100, 200, 255] : [100, 150, 255];
             this.cameras.main.flash(200, ...color, false);
@@ -244,13 +237,13 @@ export class GameScene extends Phaser.Scene {
         const damage = 15;
 
         bullet.setData('damage', damage);
-        bullet.setData('owner', player);
+        bullet.setData('owner', player);   // 'p1' or 'p2'
         bullet.setActive(true).setVisible(true);
         bullet.setPosition(tank.x + Math.cos(angle) * 20, tank.y + Math.sin(angle) * 20);
         bullet.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
         bullet.setDepth(5);
 
-        // Auto-deactivate after 3s (prevents bullet leak)
+        // Auto-deactivate after 3s
         this.time.delayedCall(3000, () => {
             if (bullet.active) {
                 bullet.setActive(false).setVisible(false);
@@ -278,7 +271,6 @@ export class GameScene extends Phaser.Scene {
             bullet.setVelocity(Math.cos(angle) * 350, Math.sin(angle) * 350);
             bullet.setDepth(5);
 
-            // Auto-deactivate after 3s
             this.time.delayedCall(3000, () => {
                 if (bullet.active) {
                     bullet.setActive(false).setVisible(false);
@@ -288,13 +280,19 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    // --- COLLISION HANDLERS ---
+
     bulletHitZerg(bullet, zerg) {
         if (!bullet.active || !zerg.active || zerg.hp === undefined) return;
 
         const damage = bullet.getData('damage') || 15;
+        const owner = bullet.getData('owner') || 'p1';
         zerg.hp -= damage;
+        // Track who actually damaged this zerg (for kill credit)
+        zerg.setData('lastHitBy', owner);
 
         bullet.setActive(false).setVisible(false);
+        bullet.body.stop();
         this.spawnHitEffect(zerg.x, zerg.y, 0x44ff44);
 
         if (zerg.hp <= 0) {
@@ -305,8 +303,9 @@ export class GameScene extends Phaser.Scene {
     bulletHitEnemy(bullet, tank) {
         if (!bullet.active || !tank.alive || tank.hp === undefined) return;
 
-        const owner = bullet.getData('owner');
-        if (owner === String(tank.player)) return; // Same player
+        const owner = bullet.getData('owner');        // 'p1' or 'p2'
+        // Guard: bullet owner same as tank → friendly fire, skip
+        if (owner === tank.player) return;
 
         const damage = bullet.getData('damage') || 15;
         let remaining = damage;
@@ -323,22 +322,23 @@ export class GameScene extends Phaser.Scene {
             tank.hp -= remaining;
             tank.hp = Math.max(0, tank.hp);
 
-            const cam = this.cameras.main;
-            cam.shake(100, 0.01);
+            this.cameras.main.shake(100, 0.01);
             this.spawnHitEffect(tank.x, tank.y, 0xff4400);
         }
 
         bullet.setActive(false).setVisible(false);
+        bullet.body.stop();
 
-        // Attacker score
-        const attacker = owner === '1' ? this.tank1 : this.tank2;
-        if (attacker) {
+        // Attacker score — owner is 'p1' or 'p2'
+        const attacker = owner === 'p1' ? this.tank1 : this.tank2;
+        if (attacker && attacker.alive) {
             attacker.score += Math.ceil(damage / 10) * 5;
         }
     }
 
     zergHitTank(zerg, tank) {
-        if (!tank.alive || tank.hp === undefined || (tank.invincible || 0) > 0) return;
+        if (!tank.alive || tank.hp === undefined) return;
+        if ((tank.invincible || 0) > 0) return;
 
         const damage = zerg.getData('damage') || 10;
         let remaining = damage;
@@ -353,7 +353,7 @@ export class GameScene extends Phaser.Scene {
             tank.hp = Math.max(0, tank.hp);
         }
 
-        // Knockback away from zerg
+        // Knockback
         const angle = Phaser.Math.Angle.Between(zerg.x, zerg.y, tank.x, tank.y);
         tank.setVelocity(Math.cos(angle) * 100, Math.sin(angle) * 100);
 
@@ -362,30 +362,32 @@ export class GameScene extends Phaser.Scene {
 
     destroyZerg(zerg) {
         const points = zerg.getData('points') || 10;
-        const killer = zerg.getData('killer') || '1';
+        // Use actual last hitter for credit, not random
+        const killer = zerg.getData('lastHitBy') || 'p1';
 
         this.spawnExplosion(zerg.x, zerg.y);
         zerg.destroy();
 
-        // Award points to random killer (simplified — in practice track which bullet killed)
-        const attacker = killer === '1' ? this.tank1 : this.tank2;
+        const attacker = killer === 'p1' ? this.tank1 : this.tank2;
         if (attacker && attacker.alive) {
             attacker.score += points;
             attacker.kills = (attacker.kills || 0) + 1;
+
+            // Streak tracking
+            const otherTank = killer === 'p1' ? this.tank2 : this.tank1;
+            if (otherTank) otherTank.streak = 0;
             attacker.streak = (attacker.streak || 0) + 1;
-            if (attacker.streak > attacker.maxStreak) attacker.maxStreak = attacker.streak;
+            if (attacker.streak > (attacker.maxStreak || 0)) attacker.maxStreak = attacker.streak;
             if (attacker.streak % 10 === 0) attacker.score += 50;
         }
     }
 
-    onTankDeath(tank) {
+    onTankDeath(tank, playerId) {
         this.spawnExplosion(tank.x, tank.y);
         tank.setVisible(false);
-        tank.hpBar.destroy();
-        tank.shieldBar.destroy();
+        if (tank.hpBar) tank.hpBar.destroy();
+        if (tank.shieldBar) tank.shieldBar.destroy();
         this.playSound('explosion_large');
-
-        // Flash main camera (both tanks share it in shared mode)
         this.cameras.main.flash(500, 255, 0, 0);
     }
 
@@ -394,8 +396,7 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.shake(150, 0.02);
     }
 
-    spawnHitEffect(x, y, _color) {
-        // Small particle burst at hit location
+    spawnHitEffect(x, y) {
         this.emitter.explode(2, x, y);
     }
 
@@ -414,7 +415,6 @@ export class GameScene extends Phaser.Scene {
                 z.hp = hp;
                 z.setData('damage', dmg);
                 z.setData('points', pts);
-                z.setData('killer', String(Phaser.Math.Between(1, 2)));
 
                 // Move toward nearest tank
                 const target = this.nearestTank(x, y);
@@ -501,18 +501,8 @@ export class GameScene extends Phaser.Scene {
         const texture = this.textures.get(tex);
         const frameNames = texture.getFrameNames();
         if (frameNames.length > 0) {
-            // Build frame objects with texture key reference
             const frames = frameNames.map(name => ({ key: tex, frame: name }));
             this.anims.create({ key, frames, frameRate: rate, repeat: -1 });
-        }
-    }
-
-    makeAnim(zerg, key, rate) {
-        const tex = zerg.texture.key;
-        const frames = this.textures.get(tex).getFrameNames();
-        if (frames && frames.length > 1) {
-            zerg.anims.create({ key, frames, frameRate: rate, repeat: -1 });
-            zerg.play(key);
         }
     }
 
@@ -527,12 +517,10 @@ export class GameScene extends Phaser.Scene {
     onRoundTick() {
         if (this.paused) return;
         GameData.roundTimer--;
-        this.updateHUD();
         if (GameData.roundTimer <= 0) this.endRound();
     }
 
     endRound() {
-        // Prevent re-entrancy (called every frame when timer <= 0)
         if (this._roundEnding) return;
         this._roundEnding = true;
 
@@ -540,7 +528,6 @@ export class GameScene extends Phaser.Scene {
         this.waveTimerEvent.destroy();
         this.shieldRegenEvent.destroy();
 
-        // Sync per-round scores into GameData
         if (this.tank1) GameData.p1Score += this.tank1.score || 0;
         if (this.tank2) GameData.p2Score += this.tank2.score || 0;
 
@@ -557,28 +544,25 @@ export class GameScene extends Phaser.Scene {
         GameData.roundTimer = 180;
         this._roundEnding = false;
 
-        // Clear old zerg
-        this.zergGroup.clear(true, false);
+        this.zergGroup.clear(true, true);
 
-        // Reset tanks
         [this.tank1, this.tank2].forEach(tank => {
             if (!tank) return;
-            tank.setPosition(tank.player === 1 ? 150 : 650, 300);
+            tank.setPosition(tank.player === 'p1' ? 150 : 650, 300);
             tank.setActive(true).setVisible(true);
             tank.alive = true;
             tank.hp = 100;
             tank.shield = 0;
-            tank.invincible = 2000;
+            tank.invincible = 1500;
             tank.score = 0;
             tank.kills = 0;
             tank.streak = 0;
             tank._fireTimer = 0;
             tank._burstTimer = 0;
-            tank.hpBar.clear();
-            tank.shieldBar.clear();
+            if (tank.hpBar) tank.hpBar.clear();
+            if (tank.shieldBar) tank.shieldBar.clear();
         });
 
-        // Restart timers
         this.roundTimerEvent = this.time.addEvent({
             delay: 1000, callback: this.onRoundTick, callbackScope: this, loop: true,
         });
@@ -588,6 +572,9 @@ export class GameScene extends Phaser.Scene {
         this.shieldRegenEvent = this.time.addEvent({
             delay: 1000, callback: this.regenShields, callbackScope: this, loop: true,
         });
+
+        // Spawn first wave earlier in new round
+        this.time.delayedCall(2000, () => this.spawnWave());
 
         this.showWaveAnnounce(`ROUND ${GameData.currentRound}`);
         this.updateHUD();
@@ -623,17 +610,19 @@ export class GameScene extends Phaser.Scene {
         overlay.style.display = 'flex';
     }
 
-    forfeit() {
-        if (this.tank1 && this.tank1.alive) {
-            GameData.p2RoundsWon++;
-            this.onTankDeath(this.tank1);
+    forfeit(player) {
+        // player is 'p1' or 'p2' — only kill the forfeiting player's tank
+        const tank = player === 'p1' ? this.tank1 : this.tank2;
+        if (tank && tank.alive) {
+            tank.hp = 0;
+            tank.alive = false;
+            this.onTankDeath(tank, player);
+            if (player === 'p1') GameData.p2RoundsWon++;
+            else GameData.p1RoundsWon++;
         }
-        if (this.tank2 && this.tank2.alive) {
-            GameData.p1RoundsWon++;
-            this.onTankDeath(this.tank2);
-        }
-        this.scene.pause();
         document.getElementById('pause-overlay').style.display = 'none';
+        this.paused = false;
+        this.scene.resume();
         this.endRound();
     }
 
@@ -661,8 +650,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     updateHUD() {
-        const p1Hp = this.tank1 ? Math.max(0, this.tank1.hp) : GameData.p1HP;
-        const p2Hp = this.tank2 ? Math.max(0, this.tank2.hp) : GameData.p2HP;
+        const p1Hp = this.tank1 ? Math.max(0, this.tank1.hp) : 0;
+        const p2Hp = this.tank2 ? Math.max(0, this.tank2.hp) : 0;
         const p1Sh = this.tank1 ? this.tank1.shield : 0;
         const p2Sh = this.tank2 ? this.tank2.shield : 0;
 

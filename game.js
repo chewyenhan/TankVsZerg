@@ -62,9 +62,9 @@ window.resumeGame = function () {
     const gs = game.scene.getScene('GameScene');
     if (gs && gs.togglePause) gs.togglePause();
 };
-window.forfeitRound = function () {
+window.forfeitRound = function (player) {
     const gs = game.scene.getScene('GameScene');
-    if (gs && gs.forfeit) gs.forfeit();
+    if (gs && gs.forfeit) gs.forfeit(player || 'p1');
 };
 window.rematch = function () {
     document.getElementById('gameover-overlay').style.display = 'none';
