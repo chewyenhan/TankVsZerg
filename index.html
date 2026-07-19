@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank vs Zerg — Side-Scrolling Defense</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<!-- HUD overlay (positioned on top of canvas) -->
+<div id="hud" style="display:none;">
+    <div id="hud-top">
+        <div id="p1-hud">
+            <span class="hud-label" style="color:#ff4444;">&#9876; P1</span>
+            <div class="hp-bar"><div class="hp-fill hp-fill-p1" id="p1-hp"></div></div>
+            <div class="shield-bar"><div class="shield-fill shield-fill-p1" id="p1-shield"></div></div>
+            <span class="hud-score" id="p1-score">Score: 0</span>
+        </div>
+        <div id="center-info">
+            <span id="wave-display">WAVE 1</span>
+            <span id="timer-display">3:00</span>
+            <span id="round-display">ROUND 1 | 0 — 0</span>
+        </div>
+        <div id="p2-hud">
+            <span class="hud-label" style="color:#4488ff;">&#9876; P2</span>
+            <div class="hp-bar"><div class="hp-fill hp-fill-p2" id="p2-hp"></div></div>
+            <div class="shield-bar"><div class="shield-fill shield-fill-p2" id="p2-shield"></div></div>
+            <span class="hud-score" id="p2-score">Score: 0</span>
+        </div>
+    </div>
+</div>
+
+<!-- Wave announcement overlay -->
+<div id="wave-announce" style="display:none;">
+    <span id="wave-announce-text"></span>
+</div>
+
+<!-- Pause overlay -->
+<div id="pause-overlay" style="display:none;">
+    <div id="pause-box">
+        <h2>PAUSED</h2>
+        <p>Press ESC to resume</p>
+        <button class="pause-btn" onclick="resumeGame()">Resume</button>
+        <button class="pause-btn" onclick="forfeitRound()">Forfeit</button>
+    </div>
+</div>
+
+<!-- Game Over overlay -->
+<div id="gameover-overlay" style="display:none;">
+    <div id="gameover-box">
+        <h2 id="gameover-title"></h2>
+        <div id="gameover-stats"></div>
+        <button class="pause-btn" id="rematch-btn" onclick="rematch()">REMATCH</button>
+        <button class="pause-btn" onclick="returnToMenu()">MAIN MENU</button>
+    </div>
+</div>
+
+<!-- Phaser CDN (global) -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
+<!-- Our game (ES module, has access to global Phaser) -->
+<script type="module" src="game.js"></script>
+</body>
+</html>
