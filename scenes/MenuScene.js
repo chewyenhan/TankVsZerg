@@ -146,6 +146,11 @@ export class MenuScene extends Phaser.Scene {
     }
 
     startGame() {
+        // Resume audio (needs user gesture)
+        if (window.__gameAudioCtx && window.__gameAudioCtx.state === 'suspended') {
+            window.__gameAudioCtx.resume().catch(() => {});
+        }
+
         // Reset round state
         GameData.p1HP = 100;
         GameData.p2HP = 100;
