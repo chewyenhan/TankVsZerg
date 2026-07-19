@@ -38,8 +38,8 @@ export class GameScene extends Phaser.Scene {
         this.bulletsP1 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
         this.bulletsP2 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
 
-        // ── Zerg group ──
-        this.zergGroup = this.physics.add.group();
+        // ── Zerg group (config REQUIRED for proper physics world registration) ──
+        this.zergGroup = this.physics.add.group({ runChildUpdate: false });
 
         // ── Debug graphics (green = bodies visible) ──
         this.debugGfx = this.add.graphics().setDepth(99);
@@ -655,6 +655,8 @@ export class GameScene extends Phaser.Scene {
                 const { x, y } = this.randomEdge();
                 const z = this.zergGroup.create(x, y, tex);
                 if (!z) continue;
+                // Explicit physics world registration (critical for overlap detection)
+                this.physics.world.enable(z);
                 z.setDepth(8);
                 z.hp = hp;
                 z.setData('damage', dmg);

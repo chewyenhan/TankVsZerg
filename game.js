@@ -40,7 +40,7 @@ const config = {
         arcade: { gravity: { y: 0 }, debug: false },
     },
     scene: [BootScene, PreloadScene, MenuScene, GameScene, GameOverScene],
-    render: { antialias: true, pixelArt: false },
+    render: { antialias: false, pixelArt: true },
 };
 
 const game = new Phaser.Game(config);

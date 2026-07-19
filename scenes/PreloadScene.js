@@ -1,6 +1,10 @@
 /**
- * PreloadScene — Generates all procedural textures from Canvas 2D draw functions,
- * then transitions to MenuScene.
+ * PreloadScene — Loads PNG sprites with canvas fallback for Zerg.
+ *
+ * Hybrid approach:
+ * - Tanks, bullets, explosions: load from real PNG files (assets/sprites/)
+ * - Zerg: canvas-generated textures (no free PNG alternatives)
+ * - Background: canvas-generated starfield
  */
 export class PreloadScene extends Phaser.Scene {
     constructor() {
@@ -12,10 +16,10 @@ export class PreloadScene extends Phaser.Scene {
         const cx = cam.centerX;
         const cy = cam.centerY;
 
+        // Progress bar
         const box = this.add.graphics();
         box.fillStyle(0x222222, 0.8);
         box.fillRect(cx - 120, cy - 15, 240, 30);
-
         const fill = this.add.graphics();
 
         this.load.on('progress', (value) => {
@@ -24,47 +28,92 @@ export class PreloadScene extends Phaser.Scene {
             fill.fillRect(cx - 118, cy - 13, 236 * value, 26);
         });
 
-        this.time.delayedCall(400, () => {
+        // ── Load PNG sprites ──
+        // Tanks (12-frame spritesheet strips)
+        this.load.spritesheet('tank_p1', 'assets/sprites/tank_p1.png', { frameWidth: 64, frameHeight: 56 });
+        this.load.spritesheet('tank_p2', 'assets/sprites/tank_p2.png', { frameWidth: 64, frameHeight: 56 });
+
+        // Bullets
+        this.load.image('bullet_red', 'assets/sprites/bullet_red.png');
+        this.load.image('bullet_blue', 'assets/sprites/bullet_blue.png');
+        this.load.image('bullet_green', 'assets/sprites/bullet_green.png');
+
+        // Explosion spritesheet (5 frames, 64x64 each)
+        this.load.spritesheet('explosion', 'assets/sprites/explosion.png', { frameWidth: 64, frameHeight: 64 });
+
+        // ── Fallback: if PNGs fail, generate textures at runtime ──
+        this.load.on('loaderror', (file) => {
+            console.warn('[Preload] Failed to load:', file.key, '— will generate at runtime');
+        });
+
+        // Start after a short delay (let load attempt complete)
+        this.time.delayedCall(600, () => {
             box.destroy();
             fill.destroy();
-            this.generateTextures();
+            this.ensureTextures();
             this.scene.start('MenuScene');
         });
     }
 
-    generateTextures() {
-        const drawTank = window.drawTank;
-        const drawBullet = window.drawBullet;
+    /**
+     * Ensure all required textures exist. Generate canvas fallbacks for any missing.
+     */
+    ensureTextures() {
+        // Check and generate Zerg textures (always canvas-generated)
+        if (!this.textures.exists('zerg_lings')) {
+            this.generateZergTextures();
+        }
+
+        // Check tanks — generate if load failed
+        if (!this.textures.exists('tank_p1')) {
+            console.log('[Preload] Generating tank textures (PNG load failed)');
+            this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xcc2222, w, h, f));
+            this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x2244cc, w, h, f));
+        }
+
+        // Check bullets
+        if (!this.textures.exists('bullet_red')) {
+            this.generateTexture('bullet_red', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0xff6644, w, h));
+            this.generateTexture('bullet_blue', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x4488ff, w, h));
+            this.generateTexture('bullet_green', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x44ff44, w, h));
+        }
+
+        // Check explosion
+        if (!this.textures.exists('explosion')) {
+            this.generateTexture('explosion', 32, 32, 8, window.drawExplosion);
+        }
+
+        // Background (always canvas)
+        this.makeBackground();
+    }
+
+    generateZergTextures() {
         const drawZergling = window.drawZergling;
         const drawHydra = window.drawHydra;
         const drawDrone = window.drawDrone;
         const drawRoach = window.drawRoach;
         const drawUltra = window.drawUltra;
-        const drawExplosion = window.drawExplosion;
 
-        if (!drawTank) return;
+        if (drawZergling) {
+            this.makeAtlas('zerg_lings', 40, 30, 4, drawZergling);
+            this.makeAtlas('zerg_hydra', 48, 38, 4, drawHydra);
+            this.makeAtlas('zerg_drone', 40, 30, 4, drawDrone);
+            this.makeAtlas('zerg_roach', 48, 38, 4, drawRoach);
+            this.makeAtlas('zerg_ultra', 72, 56, 4, drawUltra);
+        }
+    }
 
-        // Tanks: 12 direction frames (64×56 each)
-        this.makeAtlas('tank_p1', 64, 56, 12, (ctx, w, h, f) => drawTank(ctx, 0xcc2222, w, h, f));
-        this.makeAtlas('tank_p2', 64, 56, 12, (ctx, w, h, f) => drawTank(ctx, 0x2244cc, w, h, f));
-
-        // Bullets (14×14 glowing orbs)
-        this.makeSingle('bullet_red', 14, 14, (ctx, w, h) => drawBullet(ctx, 0xff6644, w, h));
-        this.makeSingle('bullet_blue', 14, 14, (ctx, w, h) => drawBullet(ctx, 0x4488ff, w, h));
-        this.makeSingle('bullet_green', 14, 14, (ctx, w, h) => drawBullet(ctx, 0x44ff44, w, h));
-
-        // Zerg — 4-frame animations for smoother movement
-        this.makeAtlas('zerg_lings', 40, 30, 4, drawZergling);
-        this.makeAtlas('zerg_hydra', 48, 38, 4, drawHydra);
-        this.makeAtlas('zerg_drone', 40, 30, 4, drawDrone);
-        this.makeAtlas('zerg_roach', 48, 38, 4, drawRoach);
-        this.makeAtlas('zerg_ultra', 72, 56, 4, drawUltra);
-
-        // Explosion (8 frames, 32×32)
-        this.makeAtlas('explosion', 32, 32, 8, drawExplosion);
-
-        // Background
-        this.makeBackground();
+    generateTexture(key, fw, fh, frames, drawFn) {
+        if (frames > 1) {
+            this.makeAtlas(key, fw, fh, frames, drawFn);
+        } else {
+            const canvas = document.createElement('canvas');
+            canvas.width = fw;
+            canvas.height = fh;
+            const ctx = canvas.getContext('2d');
+            drawFn(ctx, fw, fh, 0);
+            this.textures.addCanvas(key, canvas);
+        }
     }
 
     makeAtlas(key, fw, fh, frames, drawFn) {
@@ -89,22 +138,12 @@ export class PreloadScene extends Phaser.Scene {
         }
     }
 
-    makeSingle(key, w, h, drawFn) {
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        drawFn(ctx, w, h);
-        this.textures.addCanvas(key, canvas);
-    }
-
     makeBackground() {
         const canvas = document.createElement('canvas');
         canvas.width = 800;
         canvas.height = 600;
         const ctx = canvas.getContext('2d');
 
-        // Deep space gradient
         const grad = ctx.createLinearGradient(0, 0, 0, 600);
         grad.addColorStop(0, '#050520');
         grad.addColorStop(0.5, '#0a0a2e');
@@ -112,7 +151,6 @@ export class PreloadScene extends Phaser.Scene {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, 800, 600);
 
-        // Grid lines (subtle)
         ctx.strokeStyle = 'rgba(255,255,255,0.03)';
         ctx.lineWidth = 1;
         for (let x = 0; x < 800; x += 40) {
@@ -122,7 +160,7 @@ export class PreloadScene extends Phaser.Scene {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(800, y); ctx.stroke();
         }
 
-        // Stars (varied brightness + color)
+        // Stars with color variation
         for (let i = 0; i < 150; i++) {
             const sx = Math.random() * 800;
             const sy = Math.random() * 600;
@@ -139,7 +177,6 @@ export class PreloadScene extends Phaser.Scene {
             ctx.arc(sx, sy, sr, 0, Math.PI * 2);
             ctx.fill();
 
-            // Occasional cross sparkle
             if (brightness > 0.85) {
                 ctx.strokeStyle = starColor;
                 ctx.lineWidth = 0.3;
@@ -148,7 +185,7 @@ export class PreloadScene extends Phaser.Scene {
             }
         }
 
-        // Nebula blobs
+        // Nebula
         const drawNebula = (x, y, radius, color) => {
             const ng = ctx.createRadialGradient(x, y, 0, x, y, radius);
             ng.addColorStop(0, color);
