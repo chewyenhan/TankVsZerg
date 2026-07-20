@@ -17,7 +17,7 @@ export class GameScene extends Phaser.Scene {
     create(data) {
         console.log('[GameScene] Creating scene...');
         GameData.waveNumber = 0;
-        GameData.roundTimer = 180;
+        GameData.survivalTime = 0;
         GameData.coopFailed = false;
         GameData.coopRoundsSurvived = 0;
 
@@ -81,23 +81,19 @@ export class GameScene extends Phaser.Scene {
         });
 
         // ── Timers ──
-        this.roundTimerEvent = this.time.addEvent({ delay: 1000, callback: this.onRoundTick, callbackScope: this, loop: true });
+        // Survival timer: counts UP from 0 every second
+        this.survivalTimerEvent = this.time.addEvent({ delay: 1000, callback: this.onSurvivalTick, callbackScope: this, loop: true });
+        // Waves spawn continuously (scales with wave number, no round ceiling)
         this.waveTimerEvent = this.time.addEvent({ delay: 12000, callback: this.spawnWave, callbackScope: this, loop: true });
         this.shieldRegenEvent = this.time.addEvent({ delay: 1000, callback: this.regenShields, callbackScope: this, loop: true });
 
         // ── Animations ──
         // Note: Creating animations requires sprite sheets with multiple frames
         // For now, zerg will be static (no animation)
-        // this.createAnimIfNeeded('zerg_lings', 'walk_zerg_lings', 6);
-        // this.createAnimIfNeeded('zerg_roach', 'walk_zerg_roach', 6);
-        // this.createAnimIfNeeded('zerg_hydra', 'fly_zerg_hydra', 4);
-        // this.createAnimIfNeeded('zerg_drone', 'fly_zerg_drone', 4);
-        // this.createAnimIfNeeded('zerg_ultra', 'stomp_zerg_ultra', 3);
         console.log('[GameScene] Animations disabled (sprite sheets not available)');
 
         // ── State ──
         this.paused = false;
-        this._roundEnding = false;
         this._matchEnding = false;
         this._debugLogged = false;
 
@@ -110,7 +106,7 @@ export class GameScene extends Phaser.Scene {
         // ── Start BGM (will be audible after AudioContext is resumed by user gesture) ──
         this.startBGM();
 
-        this.showWaveAnnounce(`ROUND ${GameData.currentRound}`);
+        this.showWaveAnnounce('WAVE 1');
         this.updateHUD();
     }
 
@@ -306,14 +302,13 @@ export class GameScene extends Phaser.Scene {
     createTank(x, y, texture, playerId) {
         const tank = this.physics.add.sprite(x, y, texture);
         tank.setCollideWorldBounds(true);
-        tank.setScale(1.2);
         tank.setDepth(10);
         tank.player = playerId;
         tank.hp = 100;
         tank.maxHp = 100;
         tank.shield = 0;
         tank.maxShield = 30;
-        tank.invincible = 500;        // 0.5s spawn protection (reduced from 2s)
+        tank.invincible = 500;        // 0.5s spawn protection
         tank.damageBoost = 0;         // Power-up stacks (0-3, +5 damage each)
         tank.nukeCharges = 0;         // Stored nukes (max 3)
         tank.alive = true;
@@ -322,9 +317,22 @@ export class GameScene extends Phaser.Scene {
         tank.streak = 0;
         tank.maxStreak = 0;
 
-        // EXPLICIT body size — critical for canvas textures
-        tank.body.setSize(64, 56);
-        tank.body.setOffset(-4, -4);
+        // Auto-detect texture size for proper body sizing
+        const tex = this.textures.get(texture);
+        const texW = tex ? tex.getSourceImage().width : 64;
+        const texH = tex ? tex.getSourceImage().height : 56;
+
+        if (texW > 70) {
+            // Kenney tank PNG (~76-84px wide) — scale down
+            tank.setScale(0.8);
+            tank.body.setSize(58, 58);
+            tank.body.setOffset((texW - 58) / 2, (texH - 58) / 2);
+        } else {
+            // Canvas fallback (64×56) or other small texture
+            tank.setScale(1.2);
+            tank.body.setSize(56, 48);
+            tank.body.setOffset(4, 4);
+        }
 
         tank.hpBar = this.add.graphics().setDepth(11);
         tank.shieldBar = this.add.graphics().setDepth(11);
@@ -378,13 +386,13 @@ export class GameScene extends Phaser.Scene {
         this.updateHUD();
         this.cleanupExpiredBullets();
         this.cleanupEnemyBullets();
-        this.updateEnemyAI(delta);
+        this.updateEnemyAI(delta);  // FIXED: pass delta (ms) not dt (seconds)
 
         if (Phaser.Input.Keyboard.JustDown(this.keys.escape)) {
             this.togglePause();
         }
 
-        // ── Death & Round-End Handling ──
+        // ── Death Handling (survival mode — game ends when you die) ──
 
         // Tank 1 death
         if (this.tank1.hp <= 0 && this.tank1.alive) {
@@ -402,12 +410,12 @@ export class GameScene extends Phaser.Scene {
             this.onTankDeath(this.tank2, 'p2');
         }
 
-        // Two player: both dead → end round immediately
+        // Two player co-op: both dead → game over
         if (GameData.gameMode === 'twoPlayer') {
             const bothDead = !this.tank1.alive && !this.tank2.alive;
-            if (bothDead) {
-                GameData.coopFailed = true;  // Mark round as failed
-                this.endRound();
+            if (bothDead && !this._matchEnding) {
+                GameData.coopFailed = true;
+                this.endMatch('twoPlayer');
             }
         }
     }
@@ -538,14 +546,16 @@ export class GameScene extends Phaser.Scene {
                 this.playSound('burst');
             }
 
-            // Shield (manual edge detection — JustDown is unreliable)
+            // Shield (3s cooldown to prevent spam)
             const shieldKey = player === 'p1' ? keys.p1Shield : keys.p2Shield;
+            tank._shieldCooldown = Math.max(0, (tank._shieldCooldown || 0) - delta);
             tank._shieldPrevDown = tank._shieldPrevDown || false;
             const shieldDown = shieldKey.isDown;
             const shieldJustPressed = shieldDown && !tank._shieldPrevDown;
-            if (shieldJustPressed && tank.shield < tank.maxShield) {
+            if (shieldJustPressed && tank.shield < tank.maxShield && tank._shieldCooldown <= 0) {
                 tank.shield = Math.min(tank.maxShield, tank.shield + 15);
                 tank.invincible = Math.max(tank.invincible, 300);
+                tank._shieldCooldown = 3000;  // 3 second cooldown
                 this.playSound('shield');
                 this.cameras.main.flash(200, 100, 200, 255, false);
             }
@@ -608,13 +618,15 @@ export class GameScene extends Phaser.Scene {
             this.playSound(player === 'p1' ? 'fire_red' : 'fire_blue');
         }
 
-        // Shield — edge detection
+        // Shield — edge detection + 3s cooldown
         const shieldKey = player === 'p1' ? keys.p1Shield : keys.p2Shield;
+        tank._shieldCooldown = Math.max(0, (tank._shieldCooldown || 0) - delta);
         tank._shieldPrevDown = tank._shieldPrevDown || false;
         const shieldDown = shieldKey.isDown;
-        if (shieldDown && !tank._shieldPrevDown && tank.shield < (tank.maxShield || 30)) {
+        if (shieldDown && !tank._shieldPrevDown && tank.shield < (tank.maxShield || 30) && tank._shieldCooldown <= 0) {
             tank.shield = Math.min(tank.maxShield || 30, tank.shield + 15);
             tank.invincible = Math.max(tank.invincible || 0, 300);
+            tank._shieldCooldown = 3000;  // 3 second cooldown
             this.playSound('shield');
             this.cameras.main.flash(200, 100, 200, 255, false);
         }
@@ -880,16 +892,15 @@ export class GameScene extends Phaser.Scene {
         if (!bullet) return;
 
         const angle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
+        const bx = zerg.x + Math.cos(angle) * 20;
+        const by = zerg.y + Math.sin(angle) * 20;
         bullet.setData('damage', damage || 8);
         bullet.setData('expireAt', this.time.now + 4000);
         bullet.setActive(true).setVisible(true);
+        bullet.body.reset(bx, by);
         bullet.body.enable = true;
         bullet.body.setSize(10, 10);
         bullet.body.setAllowGravity(false);
-        bullet.setPosition(
-            zerg.x + Math.cos(angle) * 20,
-            zerg.y + Math.sin(angle) * 20
-        );
         bullet.setVelocity((speed || 220) * Math.cos(angle), (speed || 220) * Math.sin(angle));
         bullet.setDepth(7);
     }
@@ -915,7 +926,8 @@ export class GameScene extends Phaser.Scene {
         this.playSound('hit_tank');
     }
 
-    updateEnemyAI(dt) {
+    updateEnemyAI(delta) {
+        // delta is in milliseconds (Phaser standard)
         const zergs = this.zergGroup.getChildren();
         for (const zerg of zergs) {
             if (!zerg.active || zerg.hp <= 0) continue;
@@ -928,7 +940,7 @@ export class GameScene extends Phaser.Scene {
 
             // ── Spitter AI (ranged, keeps distance) ──
             if (type === 'spitter') {
-                zerg._fireTimer = (zerg._fireTimer || 0) - dt;
+                zerg._fireTimer = (zerg._fireTimer || 0) - delta;
                 const PREFERRED = 200, TOO_CLOSE = 120;
                 const angle = Phaser.Math.Angle.Between(target.x, target.y, zerg.x, zerg.y);
 
@@ -944,13 +956,23 @@ export class GameScene extends Phaser.Scene {
 
                 if (dist < 380 && zerg._fireTimer <= 0) {
                     this.fireEnemyBullet(zerg, target, 12, 200);
-                    zerg._fireTimer = 2500 + Math.random() * 500;
+                    zerg._fireTimer = 2500 + Math.random() * 500;  // ms
                 }
             }
 
-            // ── Boss Ultra AI (ranged spread attack) ──
+            // ── Boss Ultra AI (chase + spread attack) ──
             if (type === 'ultra_boss') {
-                zerg._fireTimer = (zerg._fireTimer || 0) - dt;
+                zerg._fireTimer = (zerg._fireTimer || 0) - delta;
+
+                // Chase the nearest tank (was missing — boss just drifted away!)
+                const chaseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
+                const chaseSpeed = 55;
+                zerg.setVelocity(
+                    Math.cos(chaseAngle) * chaseSpeed,
+                    Math.sin(chaseAngle) * chaseSpeed
+                );
+
+                // Fire 3-spread projectiles when in range
                 if (dist < 420 && zerg._fireTimer <= 0) {
                     const baseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
                     for (let i = -1; i <= 1; i++) {
@@ -960,26 +982,23 @@ export class GameScene extends Phaser.Scene {
                             b.setData('damage', 20);
                             b.setData('expireAt', this.time.now + 4000);
                             b.setActive(true).setVisible(true);
+                            b.body.reset(zerg.x + Math.cos(spreadAngle) * 30, zerg.y + Math.sin(spreadAngle) * 30);
                             b.body.enable = true;
                             b.body.setSize(10, 10);
                             b.body.setAllowGravity(false);
-                            b.setPosition(
-                                zerg.x + Math.cos(spreadAngle) * 30,
-                                zerg.y + Math.sin(spreadAngle) * 30
-                            );
                             b.setVelocity(280 * Math.cos(spreadAngle), 280 * Math.sin(spreadAngle));
                             b.setDepth(7).setTint(0xff6644);  // Red-tinted for boss
                         }
                     }
-                    zerg._fireTimer = 3000 + Math.random() * 1000;
+                    zerg._fireTimer = 3000 + Math.random() * 1000;  // ms
                 }
             }
         }
     }
 
-    spawnSpitter(count, round) {
+    spawnSpitter(count, wave) {
         const tex = 'zerg_spitter';
-        const hp = 40 + round * 4;
+        const hp = 40 + wave * 4;
         const spd = 60;
         const dmg = 8;
 
@@ -1070,37 +1089,35 @@ export class GameScene extends Phaser.Scene {
             }
         };
 
-        // ── Formula-based wave scaling for 100 rounds ──
-        const round = GameData.currentRound;
+        // ── Survival wave scaling (difficulty based on wave number only) ──
         const isBossWave = (wave % 10 === 0);       // Major boss every 10 waves
         const isMiniBossWave = (wave % 5 === 0);     // Ultra mini-boss every 5 waves
 
-        // Scaling: +12% per round, +6% per wave
-        const roundMult = 1 + (round - 1) * 0.12;
-        const waveMult = 1 + (wave - 1) * 0.06;
+        // Base difficulty scales with wave number (+8% per wave)
+        const waveMult = 1 + (wave - 1) * 0.08;
 
         // Core melee swarm
-        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * roundMult), 15, 170 + round * 4, 15, 10);
-        spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * roundMult), 30 + round * 3, 100 + round * 2, 12, 20);
-        spawn('zerg_drone', Math.floor((5 + wave * 0.35) * roundMult), 20 + round * 2, 140 + round * 3, 8, 15);
-        spawn('zerg_roach', Math.floor((3 + wave * 0.25) * roundMult), 60 + round * 5, 75 + round * 2, 25, 30);
+        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * waveMult), 15 + wave, 170 + wave * 4, 15, 10);
+        spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * waveMult), 30 + wave * 3, 100 + wave * 2, 12, 20);
+        spawn('zerg_drone', Math.floor((5 + wave * 0.35) * waveMult), 20 + wave * 2, 140 + wave * 3, 8, 15);
+        spawn('zerg_roach', Math.floor((3 + wave * 0.25) * waveMult), 60 + wave * 5, 75 + wave * 2, 25, 30);
 
-        // Spitters from round 3+
-        if (round >= 3) {
-            const spitterCount = Math.floor((3 + wave * 0.3) * roundMult);
-            this.spawnSpitter(spitterCount, round);
+        // Spitters from wave 5+
+        if (wave >= 5) {
+            const spitterCount = Math.floor((3 + wave * 0.3) * waveMult);
+            this.spawnSpitter(spitterCount, wave);
         }
 
         // Mini-boss: Ultra every 5 waves
         if (isMiniBossWave) {
-            const ultraHp = 120 + round * 15;
+            const ultraHp = 120 + wave * 15;
             const ultraCount = 1 + Math.floor(wave / 15);
-            spawn('zerg_ultra', ultraCount, ultraHp, 55, 40 + round, 100);
+            spawn('zerg_ultra', ultraCount, ultraHp, 55, 40 + wave, 100);
         }
 
         // Boss wave: every 10 waves — super-sized ultra with ranged attack
         if (isBossWave) {
-            const bossHp = 200 + round * 30;
+            const bossHp = 200 + wave * 30;
             const bossCount = 1 + Math.floor(wave / 30);
             for (let i = 0; i < bossCount; i++) {
                 const { x, y } = this.randomEdge();
@@ -1302,123 +1319,28 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ═══════════════════════════════════════════════════
-    //  ROUND / MATCH FLOW
+    //  SURVIVAL TIMER (counts UP from 0)
     // ═══════════════════════════════════════════════════
 
-    onRoundTick() {
+    onSurvivalTick() {
         if (this.paused) return;
-        GameData.roundTimer--;
-        if (GameData.roundTimer <= 0) {
-            if (GameData.gameMode === 'single' && this.tank1.alive) {
-                // Single: survived the round
-                if (GameData.currentRound >= GameData.totalRounds) {
-                    this.endMatch('single_win');
-                } else {
-                    GameData.currentRound++;
-                    this.startNewRound();
-                }
-            } else if (GameData.gameMode === 'twoPlayer') {
-                // Co-op: timer expired = round survived (at least one alive)
-                GameData.coopFailed = false;
-                this.endRound();
-            }
-        }
-    }
-
-    endRound() {
-        if (this._roundEnding) return;
-        this._roundEnding = true;
-        this.stopBGM();
-
-        this.roundTimerEvent.destroy();
-        this.waveTimerEvent.destroy();
-        this.shieldRegenEvent.destroy();
-
-        // Clear power-ups and enemy bullets
-        this.powerupGroup.clear(true, true);
-        this.enemyBullets.clear(true, true);
-
-        if (this.tank1) GameData.p1Score += this.tank1.score || 0;
-        if (this.tank2) GameData.p2Score += this.tank2.score || 0;
-
-        // Co-op: count survived rounds
-        if (!GameData.coopFailed) {
-            GameData.coopRoundsSurvived = (GameData.coopRoundsSurvived || 0) + 1;
-        }
-
-        GameData.currentRound++;
-        if (GameData.currentRound > GameData.totalRounds) {
-            this.endMatch('twoPlayer');
-        } else {
-            GameData.coopFailed = false;
-            this.time.delayedCall(2000, () => this.startNewRound());
-        }
-    }
-
-    startNewRound() {
-        // Destroy old timers to prevent timer leak (multiple timers running concurrently)
-        this.roundTimerEvent?.destroy();
-        this.waveTimerEvent?.destroy();
-        this.shieldRegenEvent?.destroy();
-
-        // NOTE: currentRound is incremented by the caller (onRoundTick/endRound) BEFORE calling this
-        GameData.waveNumber = 0;
-        GameData.roundTimer = 180;
-        GameData.coopFailed = false;
-        this._roundEnding = false;
-        this._matchEnding = false;
-        this._debugLogged = false;
-
-        this.zergGroup.clear(true, true);
-        this.enemyBullets.clear(true, true);
-
-        [this.tank1, this.tank2].forEach(tank => {
-            if (!tank) return;
-            tank.setPosition(tank.player === 'p1' ? 150 : 650, 300);
-            tank.setActive(true).setVisible(true);
-            tank.alive = true;
-            tank.hp = 100;
-            tank.shield = 0;
-            tank.invincible = 500;
-            tank.score = 0;
-            tank.kills = 0;
-            tank.streak = 0;
-            tank.maxStreak = 0;
-            tank.damageBoost = 0;
-            tank.nukeCharges = 0;
-            tank.autoAim = true;  // Reset to auto-aim ON
-            tank._fireTimer = 0;
-            tank._burstTimer = 0;
-            tank._fireTogglePrev = false;
-            if (tank.hpBar) tank.hpBar.clear();
-            if (tank.shieldBar) tank.shieldBar.clear();
-            if (tank._autoIndicator) { tank._autoIndicator.destroy(); tank._autoIndicator = null; }
-        });
-
-        // Re-create timer events
-        this.roundTimerEvent = this.time.addEvent({ delay: 1000, callback: this.onRoundTick, callbackScope: this, loop: true });
-        this.waveTimerEvent = this.time.addEvent({ delay: 12000, callback: this.spawnWave, callbackScope: this, loop: true });
-        this.shieldRegenEvent = this.time.addEvent({ delay: 1000, callback: this.regenShields, callbackScope: this, loop: true });
-        this.time.delayedCall(2000, () => this.spawnWave());
-
-        this.showWaveAnnounce(`ROUND ${GameData.currentRound}`);
-        this.updateHUD();
-
-        // Resume BGM
-        this.startBGM();
+        GameData.survivalTime++;
     }
 
     endMatch(result) {
         if (this._matchEnding) return;
         this._matchEnding = true;
         this.stopBGM();
-        this.roundTimerEvent?.destroy();
+        this.survivalTimerEvent?.destroy();
         this.waveTimerEvent?.destroy();
         this.shieldRegenEvent?.destroy();
 
         // Capture final stats before cleanup
         const p1 = this.tank1;
         const p2 = this.tank2;
+        const survivalSec = GameData.survivalTime || 0;
+        const survivalStr = `${Math.floor(survivalSec / 60)}:${(survivalSec % 60).toString().padStart(2, '0')}`;
+
         const stats = {
             p1: p1 ? {
                 name: GameData.p1Name,
@@ -1443,10 +1365,9 @@ export class GameScene extends Phaser.Scene {
                 shield: p2.shield || 0,
             } : null,
             waves: GameData.waveNumber,
-            round: GameData.currentRound,
+            survivalTime: survivalStr,
+            survivalSec: survivalSec,
             mode: GameData.gameMode,
-            coopSurvived: GameData.coopRoundsSurvived || 0,
-            coopFailed: GameData.coopFailed || false,
         };
 
         document.getElementById('hud').style.display = 'none';
@@ -1455,92 +1376,63 @@ export class GameScene extends Phaser.Scene {
         const title = document.getElementById('gameover-title');
         const statsEl = document.getElementById('gameover-stats');
 
-        // Single-player row: 2 columns (Stat | Value)
+        // Row helpers
         const singleRow = (label, val) =>
             `<tr><td class="stat-label">${label}</td><td class="stat-p1">${val !== null && val !== undefined ? val : '—'}</td></tr>`;
-
-        // Two-player row: 3 columns (Stat | P1 | P2)
         const coopRow = (label, p1Val, p2Val) => {
             const p1s = p1Val !== null && p1Val !== undefined ? String(p1Val) : '—';
             const p2s = p2Val !== null && p2Val !== undefined ? String(p2Val) : '—';
             return `<tr><td class="stat-label">${label}</td><td class="stat-p1">${p1s}</td><td class="stat-p2">${p2s}</td></tr>`;
         };
 
-        switch (result) {
-            case 'single_win':
-                title.textContent = `🏆 ${GameData.p1Name} SURVIVED!`;
-                title.style.color = '#44ff44';
-                statsEl.innerHTML = `
-                    <p style="font-size:18px;margin-bottom:12px;">All ${stats.round} rounds defended!</p>
-                    <table class="score-table">
-                        <tr><th>Stat</th><th>Value</th></tr>
-                        ${singleRow('Rounds Survived', stats.round + ' / ' + stats.round)}
-                        ${singleRow('Kills', stats.p1.kills)}
-                        ${singleRow('Max Streak', stats.p1.maxStreak)}
-                        ${singleRow('Waves Faced', stats.waves)}
-                        ${singleRow('Damage Boost', '+' + (stats.p1.damageBoost * 5))}
-                        ${singleRow('Nukes Held', stats.p1.nukes)}
-                        ${singleRow('Final Score', stats.p1.score)}
-                        ${singleRow('HP Remaining', stats.p1.hp)}
-                        ${singleRow('Shield', stats.p1.shield)}
-                    </table>
-                `;
-                break;
-            case 'single_lose':
-                title.textContent = `💀 ${GameData.p1Name} DEFEATED!`;
+        if (result === 'single_lose') {
+            // Single player death → leaderboard
+            title.textContent = `💀 ${GameData.p1Name} DEFEATED!`;
+            title.style.color = '#ff2222';
+            statsEl.innerHTML = `
+                <p style="font-size:18px;margin-bottom:12px;">The Zerg overran your defenses</p>
+                <table class="score-table">
+                    <tr><th>Stat</th><th>Value</th></tr>
+                    ${singleRow('Survival Time', stats.survivalTime)}
+                    ${singleRow('Waves Survived', stats.waves)}
+                    ${singleRow('Kills', stats.p1.kills)}
+                    ${singleRow('Max Streak', stats.p1.maxStreak)}
+                    ${singleRow('Damage Boost', '+' + (stats.p1.damageBoost * 5))}
+                    ${singleRow('Nukes Held', stats.p1.nukes)}
+                    ${singleRow('Final Score', stats.p1.score)}
+                </table>
+            `;
+        } else {
+            // Two-player co-op: both dead → leaderboard
+            const p1AliveTag = stats.p1.alive ? ' ✅' : ' 💀';
+            const p2AliveTag = stats.p2.alive ? ' ✅' : ' 💀';
+            const bothDead = !stats.p1.alive && !stats.p2.alive;
+
+            if (bothDead) {
+                title.textContent = '💀 ANNIHILATED!';
                 title.style.color = '#ff2222';
-                statsEl.innerHTML = `
-                    <p style="font-size:18px;margin-bottom:12px;">Zerg overran your defenses</p>
-                    <table class="score-table">
-                        <tr><th>Stat</th><th>Value</th></tr>
-                        ${singleRow('Round', 'Died in Round ' + stats.round)}
-                        ${singleRow('Kills', stats.p1.kills)}
-                        ${singleRow('Max Streak', stats.p1.maxStreak)}
-                        ${singleRow('Waves Faced', stats.waves)}
-                        ${singleRow('Damage Boost', '+' + (stats.p1.damageBoost * 5))}
-                        ${singleRow('Nukes Held', stats.p1.nukes)}
-                        ${singleRow('Final Score', stats.p1.score)}
-                    </table>
-                `;
-                break;
-            default: {
-                // Two-player CO-OP mode
-                const bothDead = !stats.p1.alive && !stats.p2.alive;
-                const anyAlive = stats.p1.alive || stats.p2.alive;
-
-                if (bothDead && stats.coopFailed) {
-                    title.textContent = '💀 ANNIHILATED!';
-                    title.style.color = '#ff2222';
-                } else if (stats.coopSurvived >= GameData.totalRounds) {
-                    title.textContent = '🏆 MISSION COMPLETE!';
-                    title.style.color = '#44ff44';
-                } else if (anyAlive) {
-                    title.textContent = '⚔️ ROUND CLEARED';
-                    title.style.color = '#ffcc00';
-                } else {
-                    title.textContent = '💀 MISSION FAILED';
-                    title.style.color = '#ff2222';
-                }
-
-                const p1AliveTag = stats.p1.alive ? ' ✅' : ' 💀';
-                const p2AliveTag = stats.p2.alive ? ' ✅' : ' 💀';
-
-                statsEl.innerHTML = `
-                    <p style="font-size:18px;margin-bottom:8px;">Rounds Survived: ${stats.coopSurvived} / ${stats.round}</p>
-                    <table class="score-table">
-                        <tr><th>Stat</th><th class="stat-p1">${stats.p1.name}${p1AliveTag}</th><th class="stat-p2">${stats.p2.name}${p2AliveTag}</th></tr>
-                        ${coopRow('Kills', stats.p1.kills, stats.p2.kills)}
-                        ${coopRow('Max Streak', stats.p1.maxStreak, stats.p2.maxStreak)}
-                        ${coopRow('Waves Faced', stats.waves, stats.waves)}
-                        ${coopRow('Damage Boost', '+' + (stats.p1.damageBoost * 5), '+' + (stats.p2.damageBoost * 5))}
-                        ${coopRow('Nukes Used', stats.p1.nukes, stats.p2.nukes)}
-                        ${coopRow('HP Remaining', stats.p1.hp, stats.p2.hp)}
-                        ${coopRow('Shield', stats.p1.shield, stats.p2.shield)}
-                        ${coopRow('Final Score', stats.p1.score, stats.p2.score)}
-                    </table>
-                `;
-                break;
+            } else if (stats.p1.alive && stats.p2.alive) {
+                title.textContent = '⚔️ MATCH ENDED';
+                title.style.color = '#ffcc00';
+            } else {
+                title.textContent = '💀 TANK DOWN!';
+                title.style.color = '#ff8844';
             }
+
+            statsEl.innerHTML = `
+                <p style="font-size:18px;margin-bottom:8px;">Survival Time: ${stats.survivalTime}</p>
+                <table class="score-table">
+                    <tr><th>Stat</th><th class="stat-p1">${stats.p1.name}${p1AliveTag}</th><th class="stat-p2">${stats.p2.name}${p2AliveTag}</th></tr>
+                    ${coopRow('Kills', stats.p1.kills, stats.p2.kills)}
+                    ${coopRow('Max Streak', stats.p1.maxStreak, stats.p2.maxStreak)}
+                    ${coopRow('Waves Faced', stats.waves, stats.waves)}
+                    ${coopRow('Damage Boost', '+' + (stats.p1.damageBoost * 5), '+' + (stats.p2.damageBoost * 5))}
+                    ${coopRow('Nukes Held', stats.p1.nukes, stats.p2.nukes)}
+                    ${coopRow('HP Remaining', stats.p1.hp, stats.p2.hp)}
+                    ${coopRow('Shield', stats.p1.shield, stats.p2.shield)}
+                    ${coopRow('Final Score', stats.p1.score, stats.p2.score)}
+                </table>
+            `;
         }
         overlay.style.display = 'flex';
     }
@@ -1559,12 +1451,11 @@ export class GameScene extends Phaser.Scene {
         document.getElementById('pause-overlay').style.display = 'none';
         this.paused = false;
         this.scene.resume();
-        // In co-op, check if both dead
+        // In co-op, check if both dead → end match
         if (GameData.gameMode === 'twoPlayer') {
             const bothDead = !this.tank1.alive && !this.tank2.alive;
-            if (bothDead) {
-                GameData.coopFailed = true;
-                this.endRound();
+            if (bothDead && !this._matchEnding) {
+                this.endMatch('twoPlayer');
             }
         }
     }
@@ -1618,17 +1509,21 @@ export class GameScene extends Phaser.Scene {
         if (GameData.gameMode === 'twoPlayer') {
             s('p2-score', `Score: ${GameData.p2Score}`);
         } else {
-            s('p2-score', ''); // Hide in single player
+            s('p2-score', '');
         }
         s('wave-display', `WAVE ${GameData.waveNumber}`);
-        const m = Math.floor(GameData.roundTimer / 60);
-        const sec = GameData.roundTimer % 60;
+
+        // Survival time counting UP from 0
+        const surv = GameData.survivalTime || 0;
+        const m = Math.floor(surv / 60);
+        const sec = surv % 60;
         s('timer-display', `${m}:${sec.toString().padStart(2, '0')}`);
 
+        // Show game mode
         if (GameData.gameMode === 'twoPlayer') {
-            s('round-display', `CO-OP ROUND ${GameData.currentRound}/${GameData.totalRounds}`);
+            s('round-display', 'CO-OP SURVIVAL');
         } else {
-            s('round-display', `SINGLE PLAYER - ${GameData.currentRound}/${GameData.totalRounds}`);
+            s('round-display', 'SOLO SURVIVAL');
         }
     }
 

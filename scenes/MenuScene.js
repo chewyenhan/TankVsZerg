@@ -191,7 +191,7 @@ export class MenuScene extends Phaser.Scene {
             window.__gameAudioCtx.resume().catch(() => {});
         }
 
-        // Reset round state
+        // Reset survival state
         GameData.p1HP = 100;
         GameData.p2HP = 100;
         GameData.p1Shield = 0;
@@ -204,12 +204,9 @@ export class MenuScene extends Phaser.Scene {
         GameData.p1RoundsWon = 0;
         GameData.p2RoundsWon = 0;
         GameData.waveNumber = 0;
-        GameData.roundTimer = 180;
+        GameData.survivalTime = 0;
         GameData.coopFailed = false;
         GameData.coopRoundsSurvived = 0;
-
-        // Configurable: 100 rounds for both single and co-op modes
-        GameData.totalRounds = GameData.gameMode === 'single' ? 100 : 100;
 
         this.scene.start('GameScene');
     }

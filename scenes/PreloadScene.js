@@ -1,10 +1,11 @@
 /**
- * PreloadScene — Loads PNG sprites with canvas fallback for Zerg.
+ * PreloadScene — Loads Kenney PNG assets with canvas fallback for Zerg.
  *
  * Hybrid approach:
- * - Tanks, bullets, explosions: load from real PNG files (assets/sprites/)
+ * - Tanks, bullets: load from Kenney PNGs (assets/kenney_tanks/PNG/Retina/)
  * - Zerg: canvas-generated textures (no free PNG alternatives)
- * - Background: canvas-generated starfield
+ * - Background: canvas-generated desert battlefield
+ * - Explosion: canvas-generated (no Kenney explosion asset)
  */
 export class PreloadScene extends Phaser.Scene {
     constructor() {
@@ -29,14 +30,13 @@ export class PreloadScene extends Phaser.Scene {
         });
 
         // ── Load PNG sprites ──
-        // Tanks (12-frame spritesheet strips)
-        this.load.spritesheet('tank_p1', 'assets/sprites/tank_p1.png', { frameWidth: 64, frameHeight: 56 });
-        this.load.spritesheet('tank_p2', 'assets/sprites/tank_p2.png', { frameWidth: 64, frameHeight: 56 });
+        // Tanks — load Kenney tank PNGs (real pixel-art assets)
+        this.load.image('tank_p1', 'assets/kenney_tanks/PNG/Retina/tank_red.png');
+        this.load.image('tank_p2', 'assets/kenney_tanks/PNG/Retina/tank_blue.png');
 
-        // Bullets
-        this.load.image('bullet_red', 'assets/sprites/bullet_red.png');
-        this.load.image('bullet_blue', 'assets/sprites/bullet_blue.png');
-        this.load.image('bullet_green', 'assets/sprites/bullet_green.png');
+        // Bullets — load Kenney bullet PNGs
+        this.load.image('bullet_red', 'assets/kenney_tanks/PNG/Retina/bulletRed1.png');
+        this.load.image('bullet_blue', 'assets/kenney_tanks/PNG/Retina/bulletBlue1.png');
 
         // Explosion spritesheet (5 frames, 64x64 each)
         this.load.spritesheet('explosion', 'assets/sprites/explosion.png', { frameWidth: 64, frameHeight: 64 });
@@ -72,16 +72,17 @@ export class PreloadScene extends Phaser.Scene {
             }
         }
 
-        // Check tanks — generate if load failed
+        // Check tanks — generate if Kenney PNG load failed
         if (!this.textures.exists('tank_p1')) {
-            console.log('[Preload] Generating tank textures (PNG load failed)');
+            console.log('[Preload] Generating tank textures (Kenney PNG load failed)');
             try {
-                // Opaque dark bg so tanks don't appear transparent; brighter colors for visibility
                 this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xdd3333, w, h, f), '#2a2a2a');
                 this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x3366dd, w, h, f), '#2a2a2a');
             } catch (e) {
                 console.error('[Preload] Error generating tanks:', e);
             }
+        } else {
+            console.log('[Preload] Kenney tank PNGs loaded successfully!');
         }
 
         // Check bullets
@@ -89,7 +90,6 @@ export class PreloadScene extends Phaser.Scene {
             try {
                 this.generateTexture('bullet_red', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0xff6644, w, h));
                 this.generateTexture('bullet_blue', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x4488ff, w, h));
-                this.generateTexture('bullet_green', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x44ff44, w, h));
             } catch (e) {
                 console.error('[Preload] Error generating bullets:', e);
             }

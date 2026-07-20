@@ -17,7 +17,7 @@ const GameData = {
     p1Streak: 0,
     p2Streak: 0,
     waveNumber: 0,
-    roundTimer: 180,
+    survivalTime: 0,
     displayMode: 'shared',
     gameMode: 'single',
     coopFailed: false,
