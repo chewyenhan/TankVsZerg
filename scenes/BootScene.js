@@ -190,111 +190,109 @@ export function drawBullet(ctx, color, w, h) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ZERGLING — Fast melee alien dog
+//  ZERGLING — Fast melee alien (Xenomorph style)
 //  Frame size: 40×30, 4 walk frames
 // ═══════════════════════════════════════════════════════════════
 
 export function drawZergling(ctx, w, h, frame) {
     const cx = w / 2, cy = h / 2;
-    // Walk cycle: 4 frames → leg positions
     const f = frame % 4;
-    const step = Math.sin(f * Math.PI / 2) * 2.5;
+    const step = Math.sin(f * Math.PI / 2) * 2;
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    // ── Legs (4 pairs) ──
-    const legPairs = [
-        { x: -8, y: -4 },   // front left
-        { x: -4, y: 5 },    // mid left
-        { x: 0, y: -5 },    // mid right
-        { x: 4, y: 6 },     // rear left
-        { x: 8, y: -4 },    // front right
-        { x: 2, y: 6 },     // rear right
+    // ── Legs (6 spidery legs) ──
+    ctx.strokeStyle = '#880044';
+    ctx.lineWidth = 2;
+    const legPositions = [
+        [-9, -5, -1], [-5, 6, 0], [-1, -6, 1],
+        [-9, 7, -1], [-4, -7, 0], [-2, 6, 1]
     ];
-
-    ctx.strokeStyle = '#6611aa';
-    ctx.lineWidth = 1.5;
-    legPairs.forEach((leg, i) => {
-        const phase = step * (i % 2 === 0 ? 1 : -1);
-        const lx = leg.x;
-        const ly = leg.y;
+    legPositions.forEach(([lx, ly, dir]) => {
+        const phase = step * dir;
         ctx.beginPath();
         ctx.moveTo(lx, ly);
-        ctx.lineTo(lx + (lx > 0 ? 7 : -7) + phase, ly + 7);
+        ctx.lineTo(lx + (lx > 0 ? 8 : -8) + phase, ly + (ly > 0 ? 6 : -6));
         ctx.stroke();
-        // Joint
-        ctx.fillStyle = '#551199';
+        // Spiked foot
+        ctx.fillStyle = '#660033';
         ctx.beginPath();
-        ctx.arc(lx + (lx > 0 ? 3 : -3) + phase*0.5, ly + 3.5, 1.5, 0, Math.PI*2);
+        ctx.arc(lx + (lx > 0 ? 8 : -8) + phase, ly + (ly > 0 ? 6 : -6), 2, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // ── Body carapace ──
+    // ── Body carapace (dark purple, segmented) ──
     // Shadow
-    ctx.fillStyle = '#1a3300';
+    ctx.fillStyle = '#110011';
     ctx.beginPath(); ctx.ellipse(0, 1, 11, 7, 0, 0, Math.PI*2); ctx.fill();
-    // Main body
+    // Main body (dark purple)
     const bodyGrad = ctx.createLinearGradient(0, -7, 0, 7);
-    bodyGrad.addColorStop(0, '#55cc33');
-    bodyGrad.addColorStop(0.5, '#338811');
-    bodyGrad.addColorStop(1, '#226600');
+    bodyGrad.addColorStop(0, '#660066');
+    bodyGrad.addColorStop(0.5, '#440044');
+    bodyGrad.addColorStop(1, '#220022');
     ctx.fillStyle = bodyGrad;
     ctx.beginPath(); ctx.ellipse(0, 0, 10, 6.5, 0, 0, Math.PI*2); ctx.fill();
 
-    // Carapace ridges
-    ctx.strokeStyle = '#227700';
-    ctx.lineWidth = 1;
+    // Carapace ridges (spikes)
+    ctx.strokeStyle = '#880088';
+    ctx.lineWidth = 1.5;
     for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
-        ctx.moveTo(i * 3, -5);
-        ctx.lineTo(i * 3, 4);
+        ctx.moveTo(i * 3.5, -5.5);
+        ctx.lineTo(i * 3.5, 3.5);
         ctx.stroke();
+        // Spikes at ends
+        if (i % 2 !== 0) {
+            ctx.beginPath();
+            ctx.moveTo(i * 3.5 - 0.5, -6);
+            ctx.lineTo(i * 3.5, -8);
+            ctx.lineTo(i * 3.5 + 0.5, -6);
+            ctx.fill();
+        }
     }
-    // Highlight
-    ctx.fillStyle = 'rgba(180,255,100,0.3)';
-    ctx.beginPath(); ctx.ellipse(-2, -2, 4, 2, 0, 0, Math.PI*2); ctx.fill();
+    // Gooey sheen
+    ctx.fillStyle = 'rgba(150,50,150,0.3)';
+    ctx.beginPath(); ctx.ellipse(-3, -2, 3, 1.5, 0, 0, Math.PI*2); ctx.fill();
 
-    // ── Head ──
-    ctx.fillStyle = '#2a7700';
-    ctx.beginPath(); ctx.ellipse(9, -1, 5, 4, -0.2, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#338811';
-    ctx.beginPath(); ctx.ellipse(8, -2, 3, 2.5, -0.2, 0, Math.PI*2); ctx.fill();
+    // ── Head (cephalopod style) ──
+    ctx.fillStyle = '#550055';
+    ctx.beginPath(); ctx.ellipse(9, -1, 5.5, 4.5, -0.3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#770077';
+    ctx.beginPath(); ctx.ellipse(8, -2, 4, 3.5, -0.3, 0, Math.PI*2); ctx.fill();
 
-    // Eyes (red)
-    ctx.fillStyle = '#ff0000';
-    ctx.beginPath(); ctx.arc(11, -2.5, 1.8, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ff6644';
-    ctx.beginPath(); ctx.arc(10.5, -3, 0.8, 0, Math.PI*2); ctx.fill();
+    // Eyes (glowing purple-red)
+    ctx.fillStyle = '#ff0066';
+    ctx.beginPath(); ctx.arc(11, -2, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ff3388';
+    ctx.beginPath(); ctx.arc(10.5, -3, 0.9, 0, Math.PI*2); ctx.fill();
 
-    // Mandibles
-    ctx.strokeStyle = '#441100';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(13, -3); ctx.lineTo(16 + step*0.3, -5); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(13, 1); ctx.lineTo(16 - step*0.3, 3); ctx.stroke();
+    // Fangs (long, curved)
+    ctx.fillStyle = '#44ff44';
+    ctx.beginPath(); ctx.moveTo(14, -3); ctx.quadraticCurveTo(18, -7, 19, -4); ctx.lineTo(15, -2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.quadraticCurveTo(18, -2, 19, 2); ctx.lineTo(15, 2); ctx.closePath(); ctx.fill();
 
-    // ── Antennae ──
-    ctx.strokeStyle = '#55cc33';
+    // ── Antennae (thin, sensory) ──
+    ctx.strokeStyle = '#aa00aa';
     ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(11, -5); ctx.quadraticCurveTo(15, -10, 18, -9); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(11, -3); ctx.quadraticCurveTo(14, -8, 17, -7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, -5); ctx.quadraticCurveTo(14, -12, 16, -11); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, -3); ctx.quadraticCurveTo(13, -9, 15, -8); ctx.stroke();
 
-    // Claws
-    ctx.fillStyle = '#441100';
-    ctx.beginPath(); ctx.arc(6, -6, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6, 6, 2.5, 0, Math.PI*2); ctx.fill();
-    // Claw tips
-    ctx.fillStyle = '#661800';
-    [[6, -6], [6, 6]].forEach(([cx2, cy2]) => {
-        ctx.beginPath(); ctx.moveTo(cx2 + 2, cy2 - 2); ctx.lineTo(cx2 + 5, cy2 - 4);
-        ctx.lineTo(cx2 + 2, cy2 + 1); ctx.closePath(); ctx.fill();
-    });
+    // Claws (bladed)
+    ctx.fillStyle = '#440044';
+    ctx.beginPath(); ctx.arc(5, -6, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, 6, 2.2, 0, Math.PI*2); ctx.fill();
+    // Razor blades
+    ctx.strokeStyle = '#880088';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(3, -5); ctx.lineTo(0, -7); ctx.lineTo(-1, -5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, 5); ctx.lineTo(0, 7); ctx.lineTo(-1, 5); ctx.stroke();
 
     ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  HYDRALISK — Ranged spine-shooter
+//  HYDRALISK — Ranged spine-shooter (Xenomorph bio-shooter)
 //  Frame size: 48×38, 4 fly frames
 // ═══════════════════════════════════════════════════════════════
 
@@ -306,100 +304,95 @@ export function drawHydra(ctx, w, h, frame) {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // ── Wings (membrane) ──
+    // ── Wings (membrane, translucent purple) ──
     ctx.save();
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.5;
     // Upper wing
-    ctx.fillStyle = '#8855cc';
+    ctx.fillStyle = '#990099';
     ctx.beginPath();
     ctx.moveTo(-2, -6);
     ctx.quadraticCurveTo(-10, -18 - flap, -2, -20 - flap);
     ctx.quadraticCurveTo(6, -16 - flap, 2, -10);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#6633aa';
+    ctx.strokeStyle = '#770077';
     ctx.lineWidth = 0.8;
     ctx.stroke();
-    // Wing veins
-    ctx.strokeStyle = '#7744bb';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.moveTo(-2, -6); ctx.lineTo(-6, -18 - flap); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, -19 - flap); ctx.stroke();
 
     // Lower wing
-    ctx.fillStyle = '#8855cc';
+    ctx.fillStyle = '#990099';
     ctx.beginPath();
     ctx.moveTo(-2, 6);
     ctx.quadraticCurveTo(-10, 18 + flap, -2, 20 + flap);
     ctx.quadraticCurveTo(6, 16 + flap, 2, 10);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#6633aa';
+    ctx.strokeStyle = '#770077';
     ctx.stroke();
     ctx.restore();
 
-    // ── Body ──
-    const bodyGrad = ctx.createLinearGradient(0, -8, 0, 8);
-    bodyGrad.addColorStop(0, '#9944cc');
-    bodyGrad.addColorStop(0.5, '#7722aa');
-    bodyGrad.addColorStop(1, '#551188');
+    // ── Body (elongated, purple-black) ──
+    const bodyGrad = ctx.createLinearGradient(0, -9, 0, 9);
+    bodyGrad.addColorStop(0, '#880088');
+    bodyGrad.addColorStop(0.4, '#550055');
+    bodyGrad.addColorStop(1, '#220022');
     ctx.fillStyle = bodyGrad;
-    ctx.beginPath(); ctx.ellipse(0, 0, 14, 7, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 14, 8, 0, 0, Math.PI*2); ctx.fill();
 
-    // Belly
-    ctx.fillStyle = '#bb77dd';
-    ctx.beginPath(); ctx.ellipse(-1, 2, 6, 3, 0, 0, Math.PI*2); ctx.fill();
+    // Belly (glowing)
+    ctx.fillStyle = 'rgba(255,100,150,0.4)';
+    ctx.beginPath(); ctx.ellipse(-1, 2, 6, 3.5, 0, 0, Math.PI*2); ctx.fill();
 
-    // ── Spine crest (along top) ──
-    ctx.fillStyle = '#44aa44';
-    [-10, -6, -2, 2, 6, 10].forEach(sx => {
+    // ── Spine crest (sharp spikes along back) ──
+    ctx.fillStyle = '#aa00aa';
+    [-11, -7, -3, 1, 5, 9].forEach(sx => {
         ctx.beginPath();
         ctx.moveTo(sx, -7);
-        ctx.lineTo(sx - 2, -12);
-        ctx.lineTo(sx + 2, -12);
+        ctx.lineTo(sx - 2, -13);
+        ctx.lineTo(sx + 2, -13);
         ctx.closePath(); ctx.fill();
     });
-    ctx.fillStyle = '#55cc55';
-    [-8, -4, 0, 4, 8].forEach(sx => {
+    ctx.fillStyle = '#cc00cc';
+    [-9, -5, -1, 3, 7].forEach(sx => {
         ctx.beginPath();
         ctx.moveTo(sx, -8);
-        ctx.lineTo(sx - 1.5, -11);
-        ctx.lineTo(sx + 1.5, -11);
+        ctx.lineTo(sx - 1.5, -12);
+        ctx.lineTo(sx + 1.5, -12);
         ctx.closePath(); ctx.fill();
     });
 
-    // ── Head ──
-    ctx.fillStyle = '#661199';
-    ctx.beginPath(); ctx.ellipse(13, -3, 7, 5, 0.3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#7722aa';
-    ctx.beginPath(); ctx.ellipse(12, -3, 5, 3.5, 0.3, 0, Math.PI*2); ctx.fill();
+    // ── Head (face-hugger style) ──
+    ctx.fillStyle = '#660066';
+    ctx.beginPath(); ctx.ellipse(13, -2, 7, 5, 0.4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#770077';
+    ctx.beginPath(); ctx.ellipse(12, -2, 5, 3.5, 0.4, 0, Math.PI*2); ctx.fill();
 
-    // Crest/hood (cobra-like)
-    ctx.fillStyle = '#8833bb';
+    // Crest/hood (spiky)
+    ctx.fillStyle = '#880088';
     ctx.beginPath();
-    ctx.moveTo(10, -7);
-    ctx.quadraticCurveTo(15, -14, 18, -8);
-    ctx.quadraticCurveTo(15, -5, 10, -5);
+    ctx.moveTo(9, -6);
+    ctx.quadraticCurveTo(14, -15, 18, -7);
+    ctx.quadraticCurveTo(15, -4, 9, -4);
     ctx.closePath(); ctx.fill();
 
-    // Eye
-    ctx.fillStyle = '#ffaa00';
-    ctx.beginPath(); ctx.ellipse(15.5, -4.5, 2, 1.5, 0, 0, Math.PI*2); ctx.fill();
+    // Eyes (bioluminescent purple)
+    ctx.fillStyle = '#ff00aa';
+    ctx.beginPath(); ctx.ellipse(15, -3, 2.5, 1.8, 0, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(16, -4.5, 1, 1.2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(16, -3, 1.2, 1.3, 0, 0, Math.PI*2); ctx.fill();
 
-    // Fangs
-    ctx.fillStyle = '#ffffcc';
-    ctx.beginPath(); ctx.moveTo(18, -3); ctx.lineTo(21, -5); ctx.lineTo(19, -2); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(21, -1); ctx.lineTo(19, 1); ctx.closePath(); ctx.fill();
+    // Fangs (purple)
+    ctx.fillStyle = '#ff66ff';
+    ctx.beginPath(); ctx.moveTo(19, -3); ctx.lineTo(22, -5.5); ctx.lineTo(20, -1); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(19, 1); ctx.lineTo(22, -0.5); ctx.lineTo(20, 3); ctx.closePath(); ctx.fill();
 
     // ── Tail ──
-    ctx.fillStyle = '#7722aa';
+    ctx.fillStyle = '#550055';
     ctx.beginPath(); ctx.moveTo(-13, -1); ctx.quadraticCurveTo(-18, -3, -20, 0); ctx.quadraticCurveTo(-18, 3, -13, 1); ctx.closePath(); ctx.fill();
 
     ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  DRONE — Flying insect scout
+//  DRONE — Flying insect scout (dark moth-like)
 //  Frame size: 40×30, 4 fly frames
 // ═══════════════════════════════════════════════════════════════
 
@@ -411,61 +404,63 @@ export function drawDrone(ctx, w, h, frame) {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // ── Wings ──
+    // ── Wings (dark membrane) ──
     ctx.save();
-    ctx.globalAlpha = 0.45;
-    // Left wings
-    ctx.fillStyle = '#ddcc88';
+    ctx.globalAlpha = 0.5;
+    // Upper wing
+    ctx.fillStyle = '#660066';
     ctx.beginPath();
     ctx.moveTo(0, -4);
     ctx.quadraticCurveTo(-10, -16 - flap, -4, -20 - flap);
     ctx.quadraticCurveTo(4, -16 - flap, 2, -8);
     ctx.closePath(); ctx.fill();
+    // Lower wing
+    ctx.fillStyle = '#660066';
     ctx.beginPath();
     ctx.moveTo(0, 4);
     ctx.quadraticCurveTo(-10, 16 + flap, -4, 20 + flap);
     ctx.quadraticCurveTo(4, 16 + flap, 2, 8);
     ctx.closePath(); ctx.fill();
     // Wing veins
-    ctx.strokeStyle = '#bbaa66';
+    ctx.strokeStyle = '#440044';
     ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(-6, -18 - flap); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(-6, 18 + flap); ctx.stroke();
     ctx.restore();
 
-    // ── Body ──
-    const bodyGrad = ctx.createLinearGradient(0, -5, 0, 5);
-    bodyGrad.addColorStop(0, '#eebb44');
-    bodyGrad.addColorStop(1, '#996622');
+    // ── Body (ovipositor) ──
+    const bodyGrad = ctx.createLinearGradient(0, -6, 0, 6);
+    bodyGrad.addColorStop(0, '#770077');
+    bodyGrad.addColorStop(1, '#330033');
     ctx.fillStyle = bodyGrad;
-    ctx.beginPath(); ctx.ellipse(0, 0, 8, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI*2); ctx.fill();
 
     // Stripes
-    ctx.fillStyle = '#885511';
-    ctx.fillRect(-3, -4, 6, 1.2);
-    ctx.fillRect(-2, 2, 6, 1.2);
+    ctx.fillStyle = '#aa00aa';
+    ctx.fillRect(-2, -4, 4, 1);
+    ctx.fillRect(-1, 3, 4, 1);
 
     // ── Head ──
-    ctx.fillStyle = '#aa7722';
-    ctx.beginPath(); ctx.arc(8, 0, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#550055';
+    ctx.beginPath(); ctx.arc(7, 0, 5, 0, Math.PI*2); ctx.fill();
 
-    // Compound eyes
-    ctx.fillStyle = '#222222';
-    ctx.beginPath(); ctx.ellipse(10, -2, 3.5, 2.5, 0, 0, Math.PI*2); ctx.fill();
+    // Compound eyes (glowing red)
+    ctx.fillStyle = '#ff0044';
+    ctx.beginPath(); ctx.ellipse(9, -2, 3.5, 2.5, 0, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = '#444444';
-    ctx.beginPath(); ctx.ellipse(9.5, -2.5, 1.5, 1, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(8.5, -2.5, 1.5, 1, 0, 0, Math.PI*2); ctx.fill();
     // Eye highlight
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(10, -3, 0.8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(9, -2.8, 0.8, 0, Math.PI*2); ctx.fill();
 
-    // Antennae
-    ctx.strokeStyle = '#ccaa44';
+    // Antennae (thin, dark)
+    ctx.strokeStyle = '#880088';
     ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(10, -4); ctx.quadraticCurveTo(14, -7, 16, -6); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(10, 4); ctx.quadraticCurveTo(14, 7, 16, 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, -4); ctx.quadraticCurveTo(12, -7, 14, -6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, 4); ctx.quadraticCurveTo(12, 7, 14, 6); ctx.stroke();
 
-    // Legs (small, tucked)
-    ctx.strokeStyle = '#885511';
+    // Legs (spiny)
+    ctx.strokeStyle = '#440044';
     ctx.lineWidth = 0.8;
     [-3, 0, 3].forEach(lx => {
         ctx.beginPath(); ctx.moveTo(lx, -4); ctx.lineTo(lx - 2, -7); ctx.stroke();
@@ -476,7 +471,7 @@ export function drawDrone(ctx, w, h, frame) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ROACH — Armored tank beetle
+//  ROACH — Armored tank beetle (dark biotank)
 //  Frame size: 48×38, 4 walk frames
 // ═══════════════════════════════════════════════════════════════
 
@@ -488,78 +483,86 @@ export function drawRoach(ctx, w, h, frame) {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // ── Legs (6 thick legs) ──
-    ctx.strokeStyle = '#553311';
+    // ── Legs (6 spiny legs) ──
+    ctx.strokeStyle = '#880022';
     ctx.lineWidth = 2;
     const legPositions = [
         [-7, -6, -1], [0, -8, 0], [7, -6, 1],
         [-7, 6, -1], [0, 8, 0], [7, 6, 1]
     ];
-    legPositions.forEach(([lx, ly, phaseDir], i) => {
+    legPositions.forEach(([lx, ly, phaseDir]) => {
         const phase = step * phaseDir;
         ctx.beginPath();
         ctx.moveTo(lx, ly);
         ctx.lineTo(lx + (lx > 0 ? 8 : -8) + phase, ly + (ly > 0 ? 6 : -6));
         ctx.stroke();
-        // Foot
-        ctx.fillStyle = '#331100';
+        // Spiked foot
+        ctx.fillStyle = '#660022';
         ctx.beginPath();
-        ctx.arc(lx + (lx > 0 ? 8 : -8) + phase, ly + (ly > 0 ? 6 : -6), 1.8, 0, Math.PI*2);
+        ctx.arc(lx + (lx > 0 ? 8 : -8) + phase, ly + (ly > 0 ? 6 : -6), 2, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // ── Shell / Carapace ──
+    // ── Shell / Carapace (dark purple-black) ──
     // Shadow
-    ctx.fillStyle = '#331100';
+    ctx.fillStyle = '#110011';
     ctx.beginPath(); ctx.ellipse(0, 1, 15, 10, 0, 0, Math.PI*2); ctx.fill();
     // Main shell
     const shellGrad = ctx.createLinearGradient(0, -10, 0, 10);
-    shellGrad.addColorStop(0, '#cc8833');
-    shellGrad.addColorStop(0.4, '#aa6622');
-    shellGrad.addColorStop(1, '#663311');
+    shellGrad.addColorStop(0, '#770077');
+    shellGrad.addColorStop(0.4, '#550055');
+    shellGrad.addColorStop(1, '#220022');
     ctx.fillStyle = shellGrad;
     ctx.beginPath(); ctx.ellipse(0, 0, 14, 9.5, 0, 0, Math.PI*2); ctx.fill();
     // Inner shell plate
-    ctx.fillStyle = '#dd9944';
+    ctx.fillStyle = '#880088';
     ctx.beginPath(); ctx.ellipse(-1, -3, 7, 5, 0, 0, Math.PI*2); ctx.fill();
-    // Shell ridges
-    ctx.strokeStyle = '#884411';
+    // Shell ridges (spikes)
+    ctx.strokeStyle = '#aa00aa';
     ctx.lineWidth = 0.8;
     for (let i = -1; i <= 1; i++) {
         ctx.beginPath();
         ctx.moveTo(i * 5, -8);
         ctx.lineTo(i * 5, 4);
         ctx.stroke();
+        // Spikes
+        if (i !== 0) {
+            ctx.beginPath();
+            ctx.moveTo(i * 5 - 1, -9);
+            ctx.lineTo(i * 5, -11);
+            ctx.lineTo(i * 5 + 1, -9);
+            ctx.fill();
+        }
     }
-    // Shell highlight
-    ctx.fillStyle = 'rgba(255,220,150,0.25)';
+    // Shell sheen
+    ctx.fillStyle = 'rgba(180,100,180,0.2)';
     ctx.beginPath(); ctx.ellipse(-3, -4, 4, 2, 0, 0, Math.PI*2); ctx.fill();
 
     // ── Head ──
-    ctx.fillStyle = '#774411';
+    ctx.fillStyle = '#660066';
     ctx.beginPath(); ctx.arc(13, 0, 7, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#995522';
+    ctx.fillStyle = '#770077';
     ctx.beginPath(); ctx.arc(12, -1, 5, 0, Math.PI*2); ctx.fill();
 
-    // Mandibles
-    ctx.fillStyle = '#441100';
+    // Mandibles (curved, sharp)
+    ctx.fillStyle = '#cc00cc';
     ctx.beginPath(); ctx.moveTo(18, -4); ctx.lineTo(23, -7); ctx.lineTo(19, -3); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(18, 4); ctx.lineTo(23, 7); ctx.lineTo(19, 3); ctx.closePath(); ctx.fill();
     // Mandible tips
-    ctx.fillStyle = '#220000';
+    ctx.fillStyle = '#ff00ff';
     ctx.beginPath(); ctx.arc(22.5, -6.5, 1.2, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(22.5, 6.5, 1.2, 0, Math.PI*2); ctx.fill();
 
-    // Eyes (glowing orange)
-    ctx.fillStyle = '#ff8800';
-    ctx.beginPath(); ctx.arc(16, -3, 2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(16, 3, 2, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ffcc44';
-    ctx.beginPath(); ctx.arc(15.5, -3.5, 0.8, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(15.5, 2.5, 0.8, 0, Math.PI*2); ctx.fill();
+    // Eyes (glowing pink-red)
+    ctx.fillStyle = '#ff0088';
+    ctx.beginPath(); ctx.arc(16, -3, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(16, 3, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ff88bb';
+    ctx.beginPath(); ctx.arc(15.5, -3.5, 0.9, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(15.5, 2.5, 0.9, 0, Math.PI*2); ctx.fill();
 
     // ── Tail spikes ──
-    ctx.fillStyle = '#552200';
+    ctx.fillStyle = '#550055';
     ctx.beginPath(); ctx.moveTo(-13, -2); ctx.lineTo(-17, -5); ctx.lineTo(-14, 0); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-13, 2); ctx.lineTo(-17, 5); ctx.lineTo(-14, 0); ctx.closePath(); ctx.fill();
 
@@ -567,7 +570,7 @@ export function drawRoach(ctx, w, h, frame) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ULTRALISK — Massive boss zerg
+//  ULTRALISK — Massive boss zerg (Xenomorph Queen)
 //  Frame size: 72×56, 4 stomp frames
 // ═══════════════════════════════════════════════════════════════
 
@@ -579,8 +582,8 @@ export function drawUltra(ctx, w, h, frame) {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // ── Legs (4 massive) ──
-    ctx.strokeStyle = '#551133';
+    // ── Legs (4 massive spiny legs) ──
+    ctx.strokeStyle = '#990022';
     ctx.lineWidth = 2.5;
     [[-12,-10,-1],[12,-10,1],[-12,10,-1],[12,10,1]].forEach(([lx, ly, dir]) => {
         const phase = stomp * dir;
@@ -588,44 +591,44 @@ export function drawUltra(ctx, w, h, frame) {
         ctx.moveTo(lx, ly);
         ctx.lineTo(lx + (lx > 0 ? 10 : -10) + phase, ly + (ly > 0 ? 8 : -8));
         ctx.stroke();
-        // Foot
-        ctx.fillStyle = '#330022';
+        // Spiked foot
+        ctx.fillStyle = '#660011';
         ctx.beginPath();
         ctx.arc(lx + (lx > 0 ? 10 : -10) + phase, ly + (ly > 0 ? 8 : -8), 3, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // ── Body ──
+    // ── Body (massive segmented carapace) ──
     // Shadow
-    ctx.fillStyle = '#220011';
+    ctx.fillStyle = '#110011';
     ctx.beginPath(); ctx.ellipse(0, 2, 22, 15, 0, 0, Math.PI*2); ctx.fill();
     // Main body
     const bodyGrad = ctx.createLinearGradient(0, -15, 0, 15);
-    bodyGrad.addColorStop(0, '#994466');
-    bodyGrad.addColorStop(0.5, '#772244');
-    bodyGrad.addColorStop(1, '#441122');
+    bodyGrad.addColorStop(0, '#880066');
+    bodyGrad.addColorStop(0.4, '#660044');
+    bodyGrad.addColorStop(1, '#330022');
     ctx.fillStyle = bodyGrad;
     ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2); ctx.fill();
 
-    // Armor plates (segmented)
-    ctx.fillStyle = '#883355';
+    // Armor plates (segmented dark purple)
+    ctx.fillStyle = '#990099';
     ctx.beginPath(); ctx.ellipse(-6, -4, 10, 7, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#994466';
+    ctx.fillStyle = '#bb00bb';
     ctx.beginPath(); ctx.ellipse(-8, -5, 6, 4, 0, 0, Math.PI*2); ctx.fill();
 
     // Plate seams
-    ctx.strokeStyle = '#330022';
+    ctx.strokeStyle = '#440044';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(-14, -6); ctx.lineTo(-10, 8); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-6, -10); ctx.lineTo(-2, 10); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(2, -11); ctx.lineTo(6, 11); ctx.stroke();
 
-    // Body highlight
-    ctx.fillStyle = 'rgba(255,180,200,0.2)';
+    // Body sheen
+    ctx.fillStyle = 'rgba(200,100,200,0.2)';
     ctx.beginPath(); ctx.ellipse(-8, -6, 4, 2.5, 0, 0, Math.PI*2); ctx.fill();
 
-    // ── Tusks / Horns (forward-facing) ──
-    ctx.fillStyle = '#ccccaa';
+    // ── Tusks / Horns (forward-facing, glowing pink) ──
+    ctx.fillStyle = '#ff66aa';
     // Upper tusks
     ctx.beginPath();
     ctx.moveTo(20, -8);
@@ -639,7 +642,7 @@ export function drawUltra(ctx, w, h, frame) {
     ctx.quadraticCurveTo(28, 10, 20, 6);
     ctx.closePath(); ctx.fill();
     // Tusk highlight
-    ctx.fillStyle = '#eeeedd';
+    ctx.fillStyle = '#ffaaee';
     ctx.beginPath();
     ctx.moveTo(22, -8);
     ctx.quadraticCurveTo(27, -16, 30, -15);
@@ -647,34 +650,34 @@ export function drawUltra(ctx, w, h, frame) {
     ctx.closePath(); ctx.fill();
 
     // ── Head ──
-    ctx.fillStyle = '#661133';
+    ctx.fillStyle = '#550055';
     ctx.beginPath(); ctx.arc(17, -1, 9, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#772244';
+    ctx.fillStyle = '#660066';
     ctx.beginPath(); ctx.arc(16, -2, 7, 0, Math.PI*2); ctx.fill();
 
-    // Eyes (fierce red)
-    ctx.fillStyle = '#ff2200';
-    ctx.beginPath(); ctx.arc(20, -4, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(20, 4, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ff6644';
-    ctx.beginPath(); ctx.arc(19.5, -5, 1, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(19.5, 3, 1, 0, Math.PI*2); ctx.fill();
+    // Eyes (fierce glowing pink-red)
+    ctx.fillStyle = '#ff0088';
+    ctx.beginPath(); ctx.arc(20, -4, 2.8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(20, 4, 2.8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ff55aa';
+    ctx.beginPath(); ctx.arc(19.5, -5, 1.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(19.5, 3, 1.2, 0, Math.PI*2); ctx.fill();
 
     // Jaw
-    ctx.fillStyle = '#330011';
+    ctx.fillStyle = '#220022';
     ctx.beginPath(); ctx.ellipse(21, -1, 3, 2, 0, 0, Math.PI*2); ctx.fill();
-    // Teeth
-    ctx.fillStyle = '#eeeedd';
+    // Teeth (white, small)
+    ctx.fillStyle = '#ffffff';
     [-4, -1, 2].forEach(dy => {
         ctx.beginPath(); ctx.moveTo(23, -1 + dy); ctx.lineTo(25, -2 + dy); ctx.lineTo(23, 1 + dy); ctx.closePath(); ctx.fill();
     });
 
     // ── Arms/Claws (side) ──
-    ctx.fillStyle = '#661144';
+    ctx.fillStyle = '#770066';
     ctx.beginPath(); ctx.arc(-16, -12 - stomp*0.5, 7, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(-16, 12 + stomp*0.5, 7, 0, Math.PI*2); ctx.fill();
     // Claw details
-    ctx.strokeStyle = '#330022';
+    ctx.strokeStyle = '#440044';
     ctx.lineWidth = 1.5;
     [[-20,-16],[-16,-12],[-12,-16],[-20,16],[-16,12],[-12,16]].forEach(([cx2, cy2]) => {
         const offset = cy2 > 0 ? stomp*0.5 : -stomp*0.5;
@@ -685,12 +688,12 @@ export function drawUltra(ctx, w, h, frame) {
     });
 
     // ── Tail club ──
-    ctx.fillStyle = '#772244';
+    ctx.fillStyle = '#660044';
     ctx.beginPath(); ctx.moveTo(-19, -3); ctx.lineTo(-26, -1); ctx.lineTo(-19, 3); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#883355';
+    ctx.fillStyle = '#880066';
     ctx.beginPath(); ctx.arc(-27, -1, 4, 0, Math.PI*2); ctx.fill();
     // Tail spikes
-    ctx.fillStyle = '#994466';
+    ctx.fillStyle = '#aa00aa';
     ctx.beginPath(); ctx.moveTo(-28, -4); ctx.lineTo(-32, -6); ctx.lineTo(-27, -1); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-28, 2); ctx.lineTo(-32, 4); ctx.lineTo(-27, 1); ctx.closePath(); ctx.fill();
 

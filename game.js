@@ -19,6 +19,9 @@ const GameData = {
     waveNumber: 0,
     roundTimer: 180,
     displayMode: 'shared',
+    gameMode: 'single',
+    coopFailed: false,
+    coopRoundsSurvived: 0,
 };
 window.GameData = GameData;
 
@@ -68,11 +71,14 @@ window.forfeitRound = function (player) {
 };
 window.rematch = function () {
     document.getElementById('gameover-overlay').style.display = 'none';
-    const gs = game.scene.getScene('GameScene');
-    if (gs && gs.startNewRound) gs.startNewRound();
+    document.getElementById('hud').style.display = 'block';
+    game.scene.stop('GameScene');
+    game.scene.start('GameScene');
 };
 window.returnToMenu = function () {
     document.getElementById('gameover-overlay').style.display = 'none';
     document.getElementById('hud').style.display = 'none';
+    document.getElementById('pause-overlay').style.display = 'none';
+    game.scene.stop('GameScene');
     game.scene.start('MenuScene');
 };

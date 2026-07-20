@@ -174,4 +174,25 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
 #gameover-title { font-size: 42px; margin-bottom: 20px; }
 #gameover-stats { font-size: 16px; line-height: 2; margin-bottom: 20px; color: #ccc; }
 
+.score-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 14px;
+}
+.score-table th {
+    color: #c9a44c;
+    border-bottom: 2px solid #c9a44c;
+    padding: 6px 12px;
+    text-align: center;
+}
+.score-table td {
+    padding: 5px 12px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.stat-label { text-align: left !important; color: #aaa; }
+.stat-p1 { color: #ff6644; }
+.stat-p2 { color: #44aaff; }
+
 /* ===== Menu Scene Styles (Phaser drawn, no DOM needed) ===== */

@@ -50,7 +50,9 @@ export class PreloadScene extends Phaser.Scene {
         this.time.delayedCall(600, () => {
             box.destroy();
             fill.destroy();
+            console.log('[Preload] Starting ensureTextures...');
             this.ensureTextures();
+            console.log('[Preload] ensureTextures completed, starting MenuScene...');
             this.scene.start('MenuScene');
         });
     }
@@ -59,32 +61,54 @@ export class PreloadScene extends Phaser.Scene {
      * Ensure all required textures exist. Generate canvas fallbacks for any missing.
      */
     ensureTextures() {
+        console.log('[Preload] ensureTextures called');
+
         // Check and generate Zerg textures (always canvas-generated)
         if (!this.textures.exists('zerg_lings')) {
-            this.generateZergTextures();
+            try {
+                this.generateZergTextures();
+            } catch (e) {
+                console.error('[Preload] Error in generateZergTextures:', e);
+            }
         }
 
         // Check tanks — generate if load failed
         if (!this.textures.exists('tank_p1')) {
             console.log('[Preload] Generating tank textures (PNG load failed)');
-            this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xcc2222, w, h, f));
-            this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x2244cc, w, h, f));
+            try {
+                this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xcc2222, w, h, f));
+                this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x2244cc, w, h, f));
+            } catch (e) {
+                console.error('[Preload] Error generating tanks:', e);
+            }
         }
 
         // Check bullets
         if (!this.textures.exists('bullet_red')) {
-            this.generateTexture('bullet_red', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0xff6644, w, h));
-            this.generateTexture('bullet_blue', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x4488ff, w, h));
-            this.generateTexture('bullet_green', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x44ff44, w, h));
+            try {
+                this.generateTexture('bullet_red', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0xff6644, w, h));
+                this.generateTexture('bullet_blue', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x4488ff, w, h));
+                this.generateTexture('bullet_green', 14, 14, 1, (ctx, w, h, f) => window.drawBullet(ctx, 0x44ff44, w, h));
+            } catch (e) {
+                console.error('[Preload] Error generating bullets:', e);
+            }
         }
 
         // Check explosion
         if (!this.textures.exists('explosion')) {
-            this.generateTexture('explosion', 32, 32, 8, window.drawExplosion);
+            try {
+                this.generateTexture('explosion', 32, 32, 8, window.drawExplosion);
+            } catch (e) {
+                console.error('[Preload] Error generating explosion:', e);
+            }
         }
 
         // Background (always canvas)
-        this.makeBackground();
+        try {
+            this.makeBackground();
+        } catch (e) {
+            console.error('[Preload] Error generating background:', e);
+        }
     }
 
     generateZergTextures() {
@@ -94,12 +118,30 @@ export class PreloadScene extends Phaser.Scene {
         const drawRoach = window.drawRoach;
         const drawUltra = window.drawUltra;
 
-        if (drawZergling) {
-            this.makeAtlas('zerg_lings', 40, 30, 4, drawZergling);
-            this.makeAtlas('zerg_hydra', 48, 38, 4, drawHydra);
-            this.makeAtlas('zerg_drone', 40, 30, 4, drawDrone);
-            this.makeAtlas('zerg_roach', 48, 38, 4, drawRoach);
-            this.makeAtlas('zerg_ultra', 72, 56, 4, drawUltra);
+        console.log('[Preload] Drawing functions:', {
+            drawZergling: !!drawZergling,
+            drawHydra: !!drawHydra,
+            drawDrone: !!drawDrone,
+            drawRoach: !!drawRoach,
+            drawUltra: !!drawUltra
+        });
+
+        if (!drawZergling) {
+            console.error('[Preload] drawZergling function not found on window!');
+            return;
+        }
+
+        try {
+            console.log('[Preload] Generating zerg textures (single frame)...');
+            // Generate single-frame versions (no animations for now)
+            this.generateTexture('zerg_lings', 40, 30, 1, drawZergling);
+            this.generateTexture('zerg_hydra', 48, 38, 1, drawHydra);
+            this.generateTexture('zerg_drone', 40, 30, 1, drawDrone);
+            this.generateTexture('zerg_roach', 48, 38, 1, drawRoach);
+            this.generateTexture('zerg_ultra', 72, 56, 1, drawUltra);
+            console.log('[Preload] Zerg textures generated successfully');
+        } catch (e) {
+            console.error('[Preload] Error generating zerg textures:', e);
         }
     }
 
@@ -111,12 +153,16 @@ export class PreloadScene extends Phaser.Scene {
             canvas.width = fw;
             canvas.height = fh;
             const ctx = canvas.getContext('2d');
+
+            // NO background fill - keep textures transparent
             drawFn(ctx, fw, fh, 0);
             this.textures.addCanvas(key, canvas);
         }
     }
 
     makeAtlas(key, fw, fh, frames, drawFn) {
+        console.log(`[Preload] makeAtlas: ${key}, frames: ${frames}`);
+
         const canvas = document.createElement('canvas');
         canvas.width = fw * frames;
         canvas.height = fh;
@@ -124,17 +170,27 @@ export class PreloadScene extends Phaser.Scene {
         ctx.imageSmoothingEnabled = false;
 
         for (let f = 0; f < frames; f++) {
-            ctx.save();
-            ctx.translate(f * fw + fw / 2, fh / 2);
-            drawFn(ctx, fw, fh, f);
-            ctx.restore();
+            try {
+                ctx.save();
+                ctx.translate(f * fw + fw / 2, fh / 2);
+                drawFn(ctx, fw, fh, f);
+                ctx.restore();
+            } catch (e) {
+                console.error(`[Preload] Error drawing frame ${f} for ${key}:`, e);
+            }
         }
 
-        this.textures.addCanvas(key, canvas);
-        const texture = this.textures.get(key);
-        if (texture.has('__BASE')) texture.remove('__BASE');
-        for (let i = 0; i < frames; i++) {
-            texture.add(String(i), 0, i * fw, 0, fw, fh);
+        try {
+            this.textures.addCanvas(key, canvas);
+            const texture = this.textures.get(key);
+            if (texture.has('__BASE')) texture.remove('__BASE');
+            for (let i = 0; i < frames; i++) {
+                texture.add(String(i), 0, i * fw, 0, fw, fh);
+            }
+            console.log(`[Preload] Atlas ${key} created successfully`);
+        } catch (e) {
+            console.error(`[Preload] Error creating atlas ${key}:`, e);
+            throw e;
         }
     }
 

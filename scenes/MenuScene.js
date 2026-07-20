@@ -7,12 +7,15 @@ export class MenuScene extends Phaser.Scene {
     }
 
     create() {
+        console.log('[MenuScene] Creating...');
         const cam = this.cameras.main;
         const cx = cam.centerX;
         const cy = cam.centerY;
 
         // Background
         this.add.image(cx, cy, 'bg_starfield').setAlpha(0.5);
+
+        console.log('[MenuScene] Title text created');
 
         // Title
         this.add.text(cx, cy - 200, 'TANK vs ZERG', {
@@ -64,33 +67,51 @@ export class MenuScene extends Phaser.Scene {
         this.p2Input.on('pointerdown', () => this.startEditing(this.p2Input, 'p2'));
 
         // Mode selection
-        this.add.text(cx, cy + 40, 'DISPLAY MODE:', {
+        this.add.text(cx, cy + 40, 'GAME MODE:', {
             fontSize: '16px',
             fontFamily: 'Courier New',
             color: '#aaa',
         }).setOrigin(0.5);
 
-        this.sharedBtn = this.add.text(cx - 100, cy + 75, 'SHARED ARENA', {
+        // SINGLE PLAYER button (left)
+        const btnSingle = this.add.container(cx - 120, cy + 75);
+        const bgSingle = this.add.rectangle(0, 0, 150, 40, 0x555555).setInteractive({ useHandCursor: true });
+        const txtSingle = this.add.text(0, 0, 'SINGLE PLAYER', {
             fontSize: '16px',
             fontFamily: 'Courier New',
             color: '#fff',
-            backgroundColor: '#333',
-            padding: { x: 12, y: 6 },
-        }).setInteractive({ useHandCursor: true });
-        this.sharedBtn.on('pointerdown', () => this.selectMode('shared'));
-        this.sharedBtn.on('pointerover', () => this.sharedBtn.setStyle({ backgroundColor: '#555' })).setOrigin(0.5);
-        this.sharedBtn.on('pointerout', () => this.sharedBtn.setStyle({ backgroundColor: '#333' })).setOrigin(0.5);
+        }).setOrigin(0.5);
+        btnSingle.add([bgSingle, txtSingle]);
+        bgSingle.on('pointerdown', () => this.selectGameMode('single'));
+        bgSingle.on('pointerover', () => bgSingle.setFillStyle(0x666666));
+        bgSingle.on('pointerout', () => { if (GameData.gameMode !== 'single') bgSingle.setFillStyle(0x333333); else bgSingle.setFillStyle(0x555555); });
 
-        this.splitBtn = this.add.text(cx + 100, cy + 75, 'SPLIT SCREEN', {
+        // 2 PLAYER button (center)
+        const btnTwo = this.add.container(cx, cy + 75);
+        const bgTwo = this.add.rectangle(0, 0, 150, 40, 0x333333).setInteractive({ useHandCursor: true });
+        const txtTwo = this.add.text(0, 0, '2 PLAYER', {
+            fontSize: '16px',
+            fontFamily: 'Courier New',
+            color: '#aaa',
+        }).setOrigin(0.5);
+        btnTwo.add([bgTwo, txtTwo]);
+        bgTwo.on('pointerdown', () => this.selectGameMode('twoPlayer'));
+        bgTwo.on('pointerover', () => bgTwo.setFillStyle(0x444444));
+        bgTwo.on('pointerout', () => { if (GameData.gameMode !== 'twoPlayer') bgTwo.setFillStyle(0x333333); else bgTwo.setFillStyle(0x555555); });
+
+        this.btnSingle = btnSingle;
+        this.btnTwo = btnTwo;
+
+        this.displayModeBtn = this.add.text(cx + 120, cy + 75, 'SHARED ARENA', {
             fontSize: '16px',
             fontFamily: 'Courier New',
             color: '#aaa',
             backgroundColor: '#222',
             padding: { x: 12, y: 6 },
         }).setInteractive({ useHandCursor: true });
-        this.splitBtn.on('pointerdown', () => this.selectMode('split'));
-        this.splitBtn.on('pointerover', () => this.splitBtn.setStyle({ backgroundColor: '#444' })).setOrigin(0.5);
-        this.splitBtn.on('pointerout', () => this.splitBtn.setStyle({ backgroundColor: '#222' })).setOrigin(0.5);
+        this.displayModeBtn.on('pointerdown', () => this.selectDisplayMode());
+        this.displayModeBtn.on('pointerover', () => this.displayModeBtn.setStyle({ backgroundColor: '#444' })).setOrigin(0.5);
+        this.displayModeBtn.on('pointerout', () => this.displayModeBtn.setStyle({ backgroundColor: '#222' })).setOrigin(0.5);
 
         // Start button
         this.startBtn = this.add.text(cx, cy + 140, 'START GAME', {
@@ -111,12 +132,42 @@ export class MenuScene extends Phaser.Scene {
             color: '#666',
         }).setOrigin(0.5);
 
-        // Select shared by default
-        this.selectMode('shared');
+        // Select single player by default
+        this.selectGameMode('single');
 
         // Store editing state
         this.editing = null;
         this.editTarget = null;
+
+        // Default to single player
+        GameData.gameMode = 'single';
+    }
+
+    selectGameMode(mode) {
+        GameData.gameMode = mode;
+        const bgSingle = this.btnSingle.getAt(0);
+        const txtSingle = this.btnSingle.getAt(1);
+        const bgTwo = this.btnTwo.getAt(0);
+        const txtTwo = this.btnTwo.getAt(1);
+        if (mode === 'single') {
+            bgSingle.setFillStyle(0x555555);
+            txtSingle.setColor('#fff');
+            bgTwo.setFillStyle(0x333333);
+            txtTwo.setColor('#aaa');
+        } else {
+            bgTwo.setFillStyle(0x555555);
+            txtTwo.setColor('#fff');
+            bgSingle.setFillStyle(0x333333);
+            txtSingle.setColor('#aaa');
+        }
+    }
+
+    selectDisplayMode() {
+        if (GameData.displayMode === 'shared') {
+            GameData.displayMode = 'split';
+        } else {
+            GameData.displayMode = 'shared';
+        }
     }
 
     startEditing(textObj, player) {
@@ -125,24 +176,13 @@ export class MenuScene extends Phaser.Scene {
         textObj.setText('_');
         this.input.keyboard.once('keydown', (event) => {
             if (event.key.length === 1 && /[a-zA-Z0-9]/.test(event.key)) {
-                const newName = event.key.toUpperCase() + (player === 'p1' ? GameData.p2Name : GameData.p1Name).slice(1);
+                const newName = event.key.toUpperCase() + (player === 'p1' ? GameData.p1Name : GameData.p2Name).slice(1);
                 textObj.setText(player === 'p1' ? newName : newName);
                 if (player === 'p1') GameData.p1Name = newName;
                 else GameData.p2Name = newName;
             }
             this.editing = null;
         });
-    }
-
-    selectMode(mode) {
-        GameData.displayMode = mode;
-        if (mode === 'shared') {
-            this.sharedBtn.setStyle({ backgroundColor: '#555', color: '#fff' });
-            this.splitBtn.setStyle({ backgroundColor: '#222', color: '#aaa' });
-        } else {
-            this.splitBtn.setStyle({ backgroundColor: '#444', color: '#fff' });
-            this.sharedBtn.setStyle({ backgroundColor: '#333', color: '#aaa' });
-        }
     }
 
     startGame() {
@@ -165,6 +205,8 @@ export class MenuScene extends Phaser.Scene {
         GameData.p2RoundsWon = 0;
         GameData.waveNumber = 0;
         GameData.roundTimer = 180;
+        GameData.coopFailed = false;
+        GameData.coopRoundsSurvived = 0;
 
         this.scene.start('GameScene');
     }
