@@ -76,8 +76,9 @@ export class PreloadScene extends Phaser.Scene {
         if (!this.textures.exists('tank_p1')) {
             console.log('[Preload] Generating tank textures (PNG load failed)');
             try {
-                this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xcc2222, w, h, f));
-                this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x2244cc, w, h, f));
+                // Opaque dark bg so tanks don't appear transparent; brighter colors for visibility
+                this.generateTexture('tank_p1', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0xdd3333, w, h, f), '#2a2a2a');
+                this.generateTexture('tank_p2', 64, 56, 1, (ctx, w, h, f) => window.drawTank(ctx, 0x3366dd, w, h, f), '#2a2a2a');
             } catch (e) {
                 console.error('[Preload] Error generating tanks:', e);
             }
@@ -139,28 +140,36 @@ export class PreloadScene extends Phaser.Scene {
             this.generateTexture('zerg_drone', 40, 30, 1, drawDrone);
             this.generateTexture('zerg_roach', 48, 38, 1, drawRoach);
             this.generateTexture('zerg_ultra', 72, 56, 1, drawUltra);
+            if (window.drawSpitter) {
+                this.generateTexture('zerg_spitter', 52, 42, 1, window.drawSpitter);
+            }
             console.log('[Preload] Zerg textures generated successfully');
         } catch (e) {
             console.error('[Preload] Error generating zerg textures:', e);
         }
     }
 
-    generateTexture(key, fw, fh, frames, drawFn) {
+    generateTexture(key, fw, fh, frames, drawFn, bgColor) {
         if (frames > 1) {
-            this.makeAtlas(key, fw, fh, frames, drawFn);
+            this.makeAtlas(key, fw, fh, frames, drawFn, bgColor);
         } else {
             const canvas = document.createElement('canvas');
             canvas.width = fw;
             canvas.height = fh;
             const ctx = canvas.getContext('2d');
 
-            // NO background fill - keep textures transparent
+            // Optional opaque background (prevents transparency issues)
+            if (bgColor) {
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(0, 0, fw, fh);
+            }
+
             drawFn(ctx, fw, fh, 0);
             this.textures.addCanvas(key, canvas);
         }
     }
 
-    makeAtlas(key, fw, fh, frames, drawFn) {
+    makeAtlas(key, fw, fh, frames, drawFn, bgColor) {
         console.log(`[Preload] makeAtlas: ${key}, frames: ${frames}`);
 
         const canvas = document.createElement('canvas');
@@ -173,6 +182,10 @@ export class PreloadScene extends Phaser.Scene {
             try {
                 ctx.save();
                 ctx.translate(f * fw + fw / 2, fh / 2);
+                if (bgColor) {
+                    ctx.fillStyle = bgColor;
+                    ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
+                }
                 drawFn(ctx, fw, fh, f);
                 ctx.restore();
             } catch (e) {
@@ -199,59 +212,116 @@ export class PreloadScene extends Phaser.Scene {
         canvas.width = 800;
         canvas.height = 600;
         const ctx = canvas.getContext('2d');
+        const W = 800, H = 600;
+        const HORIZON = 280; // pixels from top
 
-        const grad = ctx.createLinearGradient(0, 0, 0, 600);
-        grad.addColorStop(0, '#050520');
-        grad.addColorStop(0.5, '#0a0a2e');
-        grad.addColorStop(1, '#0d0d1a');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 800, 600);
+        // ── Sky gradient (dusty desert sunset) ──
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, HORIZON);
+        skyGrad.addColorStop(0, '#1a0805');
+        skyGrad.addColorStop(0.25, '#35180c');
+        skyGrad.addColorStop(0.55, '#6b3a1f');
+        skyGrad.addColorStop(0.8, '#b8845c');
+        skyGrad.addColorStop(1, '#d4a870');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, W, HORIZON);
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < 800; x += 40) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 600); ctx.stroke();
+        // Sun glow (low on horizon)
+        const sunGrad = ctx.createRadialGradient(500, HORIZON - 30, 10, 500, HORIZON - 10, 160);
+        sunGrad.addColorStop(0, 'rgba(255, 220, 150, 0.6)');
+        sunGrad.addColorStop(0.4, 'rgba(255, 180, 80, 0.25)');
+        sunGrad.addColorStop(1, 'rgba(255, 100, 30, 0)');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath(); ctx.arc(500, HORIZON - 30, 160, 0, Math.PI * 2); ctx.fill();
+
+        // ── Distant mountains ──
+        ctx.fillStyle = '#1e100a';
+        ctx.beginPath();
+        ctx.moveTo(0, HORIZON);
+        for (let x = 0; x <= W; x += 4) {
+            const y = HORIZON - 15 + Math.sin(x * 0.006 + 0.5) * 25 + Math.sin(x * 0.018) * 12 + Math.sin(x * 0.04 + 2) * 6;
+            ctx.lineTo(x, y);
         }
-        for (let y = 0; y < 600; y += 40) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(800, y); ctx.stroke();
+        ctx.lineTo(W, HORIZON);
+        ctx.closePath();
+        ctx.fill();
+
+        // Closer hill layer
+        ctx.fillStyle = '#2a1808';
+        ctx.beginPath();
+        ctx.moveTo(0, HORIZON + 15);
+        for (let x = 0; x <= W; x += 3) {
+            const y = HORIZON + 10 + Math.sin(x * 0.01 + 1.2) * 18 + Math.sin(x * 0.025) * 8;
+            ctx.lineTo(x, y);
         }
+        ctx.lineTo(W, HORIZON + 15);
+        ctx.closePath();
+        ctx.fill();
 
-        // Stars with color variation
-        for (let i = 0; i < 150; i++) {
-            const sx = Math.random() * 800;
-            const sy = Math.random() * 600;
-            const sr = Math.random() * 1.5 + 0.3;
-            const brightness = Math.random();
-            const hue = Math.random();
-            let starColor;
-            if (hue < 0.7) starColor = `rgba(255,255,255,${0.3 + brightness * 0.7})`;
-            else if (hue < 0.85) starColor = `rgba(200,220,255,${0.3 + brightness * 0.7})`;
-            else starColor = `rgba(255,240,200,${0.3 + brightness * 0.7})`;
+        // ── Ground layer ──
+        const groundGrad = ctx.createLinearGradient(0, HORIZON + 30, 0, H);
+        groundGrad.addColorStop(0, '#5a3d22');
+        groundGrad.addColorStop(0.15, '#4a3020');
+        groundGrad.addColorStop(0.5, '#352218');
+        groundGrad.addColorStop(1, '#1f140c');
+        ctx.fillStyle = groundGrad;
+        ctx.fillRect(0, HORIZON + 30, W, H - HORIZON - 30);
 
-            ctx.fillStyle = starColor;
+        // ── Scattered rocks ──
+        for (let i = 0; i < 50; i++) {
+            const rx = Math.random() * W;
+            const ry = HORIZON + 35 + Math.random() * (H - HORIZON - 40);
+            const rr = Math.random() * 3 + 1.5;
+            ctx.fillStyle = `rgba(25, 15, 8, ${0.3 + Math.random() * 0.5})`;
             ctx.beginPath();
-            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+            ctx.arc(rx, ry, rr, 0, Math.PI * 2);
             ctx.fill();
-
-            if (brightness > 0.85) {
-                ctx.strokeStyle = starColor;
-                ctx.lineWidth = 0.3;
-                ctx.beginPath(); ctx.moveTo(sx - sr*2, sy); ctx.lineTo(sx + sr*2, sy); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(sx, sy - sr*2); ctx.lineTo(sx, sy + sr*2); ctx.stroke();
-            }
         }
 
-        // Nebula
-        const drawNebula = (x, y, radius, color) => {
-            const ng = ctx.createRadialGradient(x, y, 0, x, y, radius);
-            ng.addColorStop(0, color);
-            ng.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = ng;
-            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
-        };
-        drawNebula(120, 100, 120, 'rgba(30,10,60,0.15)');
-        drawNebula(650, 450, 160, 'rgba(10,20,50,0.12)');
-        drawNebula(400, 300, 200, 'rgba(15,10,30,0.08)');
+        // ── Grass tufts near horizon ──
+        for (let i = 0; i < 40; i++) {
+            const gx = Math.random() * W;
+            const gy = HORIZON + 32 + Math.random() * 25;
+            const gh = 2 + Math.random() * 3;
+            ctx.fillStyle = `rgba(55, 45, 20, ${0.4 + Math.random() * 0.4})`;
+            ctx.fillRect(gx, gy - gh, 1.5, gh);
+        }
+
+        // ── Tank tracks ──
+        for (let i = 0; i < 6; i++) {
+            const tx = Math.random() * W;
+            const ty = HORIZON + 50 + Math.random() * (H - HORIZON - 100);
+            ctx.strokeStyle = 'rgba(15, 8, 4, 0.5)';
+            ctx.lineWidth = 3 + Math.random() * 3;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty);
+            const endX = tx + 40 + Math.random() * 60;
+            const endY = ty + (Math.random() - 0.5) * 15;
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            // Parallel second track
+            ctx.lineWidth = 3 + Math.random() * 3;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty + 9 + Math.random() * 3);
+            ctx.lineTo(endX, endY + 9 + Math.random() * 3);
+            ctx.stroke();
+        }
+
+        // ── Crater / scorch marks ──
+        for (let i = 0; i < 5; i++) {
+            const cx = Math.random() * W;
+            const cy = HORIZON + 60 + Math.random() * (H - HORIZON - 120);
+            const cr = 15 + Math.random() * 25;
+            ctx.fillStyle = `rgba(10, 5, 2, 0.4)`;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, cr, cr * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Scorch ring
+            ctx.strokeStyle = `rgba(40, 20, 8, 0.5)`;
+            ctx.lineWidth = 2 + Math.random() * 2;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, cr + 3, cr * 0.6 + 2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         this.textures.addCanvas('bg_starfield', canvas);
     }

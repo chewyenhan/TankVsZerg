@@ -208,6 +208,9 @@ export class MenuScene extends Phaser.Scene {
         GameData.coopFailed = false;
         GameData.coopRoundsSurvived = 0;
 
+        // Configurable: 100 rounds for both single and co-op modes
+        GameData.totalRounds = GameData.gameMode === 'single' ? 100 : 100;
+
         this.scene.start('GameScene');
     }
 }

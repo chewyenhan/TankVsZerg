@@ -17,6 +17,7 @@ export class BootScene extends Phaser.Scene {
         window.drawDrone = drawDrone;
         window.drawRoach = drawRoach;
         window.drawUltra = drawUltra;
+        window.drawSpitter = drawSpitter;
         window.drawExplosion = drawExplosion;
 
         this.scene.start('PreloadScene');
@@ -696,6 +697,106 @@ export function drawUltra(ctx, w, h, frame) {
     ctx.fillStyle = '#aa00aa';
     ctx.beginPath(); ctx.moveTo(-28, -4); ctx.lineTo(-32, -6); ctx.lineTo(-27, -1); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-28, 2); ctx.lineTo(-32, 4); ctx.lineTo(-27, 1); ctx.closePath(); ctx.fill();
+
+    ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPITTER — Ranged bio-artillery zerg (acid projectile launcher)
+//  Frame size: 52×42, 4 pulsing frames
+// ═══════════════════════════════════════════════════════════════
+
+export function drawSpitter(ctx, w, h, frame) {
+    const cx = w / 2, cy = h / 2;
+    const f = frame % 4;
+    const pulse = Math.sin(f * Math.PI / 2) * 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // ── Legs (6 spindly) ──
+    ctx.strokeStyle = '#446622';
+    ctx.lineWidth = 2;
+    [[-10,-7,-1],[0,-9,0],[10,-7,1],[-10,7,-1],[0,9,0],[10,7,1]].forEach(([lx, ly, dir]) => {
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + (lx > 0 ? 10 : -10), ly + (ly > 0 ? 8 : -8));
+        ctx.stroke();
+    });
+
+    // ── Body (bulbous, dark green-purple) ──
+    const bodyGrad = ctx.createRadialGradient(-2, 0, 2, 0, 0, 12);
+    bodyGrad.addColorStop(0, '#446622');
+    bodyGrad.addColorStop(0.6, '#2a4a10');
+    bodyGrad.addColorStop(1, '#1a2a08');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath(); ctx.ellipse(0, 0, 13, 10, 0, 0, Math.PI*2); ctx.fill();
+
+    // Carapace ridges
+    ctx.strokeStyle = '#558833';
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 6, -8);
+        ctx.lineTo(i * 6, 5);
+        ctx.stroke();
+    }
+
+    // Belly glow
+    ctx.fillStyle = 'rgba(100,200,50,0.2)';
+    ctx.beginPath(); ctx.ellipse(0, 3, 6, 3, 0, 0, Math.PI*2); ctx.fill();
+
+    // ── Acid sac on back (glowing green-yellow, pulsing) ──
+    const sacRadius = 5 + pulse;
+    const sacGrad = ctx.createRadialGradient(0, -7, 1, 0, -7, sacRadius);
+    sacGrad.addColorStop(0, 'rgba(200,255,80,0.9)');
+    sacGrad.addColorStop(0.4, 'rgba(140,220,30,0.7)');
+    sacGrad.addColorStop(1, 'rgba(80,160,20,0)');
+    ctx.fillStyle = sacGrad;
+    ctx.beginPath(); ctx.arc(0, -7, sacRadius, 0, Math.PI*2); ctx.fill();
+
+    // Acid dripping from sac
+    ctx.fillStyle = 'rgba(180,255,60,0.6)';
+    ctx.beginPath(); ctx.arc(-2, -7 + sacRadius - 1, 1.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, -7 + sacRadius - 2, 1, 0, Math.PI*2); ctx.fill();
+
+    // ── Head / Snout (elongated cannon-like) ──
+    ctx.fillStyle = '#335522';
+    ctx.beginPath(); ctx.ellipse(11, -1, 7, 5, 0.3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#447733';
+    ctx.beginPath(); ctx.ellipse(10, -2, 5, 3.5, 0.3, 0, Math.PI*2); ctx.fill();
+
+    // Snout barrel (cannon-like tube)
+    ctx.fillStyle = '#2a3a10';
+    ctx.fillRect(14, -3, 8, 5);
+    ctx.fillStyle = '#3a5020';
+    ctx.fillRect(15, -2.5, 6, 4);
+
+    // Acid glow at snout tip
+    const tipGrad = ctx.createRadialGradient(22, -0.5, 0, 22, -0.5, 4);
+    tipGrad.addColorStop(0, 'rgba(200,255,60,0.9)');
+    tipGrad.addColorStop(0.5, 'rgba(150,220,30,0.6)');
+    tipGrad.addColorStop(1, 'rgba(100,180,20,0)');
+    ctx.fillStyle = tipGrad;
+    ctx.beginPath(); ctx.arc(22, -0.5, 4, 0, Math.PI*2); ctx.fill();
+
+    // Drip from snout
+    ctx.fillStyle = 'rgba(200,255,80,0.5)';
+    ctx.beginPath(); ctx.arc(23, 3, 1.2, 0, Math.PI*2); ctx.fill();
+
+    // ── Eyes (glowing yellow-green) ──
+    ctx.fillStyle = '#ccff44';
+    ctx.beginPath(); ctx.arc(13, -3, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(13.5, -3.5, 1, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(14, -4, 0.5, 0, Math.PI*2); ctx.fill();
+
+    // ── Antennae ──
+    ctx.strokeStyle = '#669944';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(9, -6); ctx.quadraticCurveTo(13, -14, 16, -12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(9, -4); ctx.quadraticCurveTo(12, -10, 15, -9); ctx.stroke();
 
     ctx.restore();
 }

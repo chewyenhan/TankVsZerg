@@ -43,12 +43,16 @@ export class GameScene extends Phaser.Scene {
         this.bulletsP1 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
         this.bulletsP2 = this.physics.add.group({ maxSize: 30, runChildUpdate: true });
 
+        // ── Enemy bullet pool (zerg ranged attacks) ──
+        this.enemyBullets = this.physics.add.group({ maxSize: 80, runChildUpdate: false });
+
         // ── Zerg group (config REQUIRED for proper physics world registration) ──
         this.zergGroup = this.physics.add.group({ runChildUpdate: false });
 
         // ── Power-up group ──
         this.powerupGroup = this.physics.add.group({ runChildUpdate: false });
         this.generatePowerupTextures();
+        this.generateEnemyBulletTexture();
 
         // ── Debug graphics (green = bodies visible) ──
         this.debugGfx = this.add.graphics().setDepth(99);
@@ -345,6 +349,11 @@ export class GameScene extends Phaser.Scene {
         if (this.tank2) {
             this.physics.add.overlap(this.tank2, this.powerupGroup, this.collectPowerup, null, this);
         }
+        // Enemy bullet hits tank
+        this.physics.add.overlap(this.enemyBullets, this.tank1, this.enemyBulletHitTank, null, this);
+        if (this.tank2) {
+            this.physics.add.overlap(this.enemyBullets, this.tank2, this.enemyBulletHitTank, null, this);
+        }
     }
 
     // ═══════════════════════════════════════════════════
@@ -368,6 +377,8 @@ export class GameScene extends Phaser.Scene {
         this.drawDebugBodies();
         this.updateHUD();
         this.cleanupExpiredBullets();
+        this.cleanupEnemyBullets();
+        this.updateEnemyAI(delta);
 
         if (Phaser.Input.Keyboard.JustDown(this.keys.escape)) {
             this.togglePause();
@@ -797,6 +808,7 @@ export class GameScene extends Phaser.Scene {
     destroyZerg(zerg) {
         const points = zerg.getData('points') || 10;
         const killer = zerg.getData('lastHitBy') || 'p1';
+        const zergType = zerg.getData('type') || '';
 
         this.spawnExplosion(zerg.x, zerg.y);
         this.playSound('explosion');
@@ -811,6 +823,8 @@ export class GameScene extends Phaser.Scene {
             attacker.streak = (attacker.streak || 0) + 1;
             if (attacker.streak > (attacker.maxStreak || 0)) attacker.maxStreak = attacker.streak;
             if (attacker.streak % 10 === 0) attacker.score += 50;
+            // Boss kill bonus
+            if (zergType === 'ultra_boss') attacker.score += 100;
         }
 
         // 10% chance to drop a power-up
@@ -840,6 +854,161 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ═══════════════════════════════════════════════════
+    //  ENEMY AI — Ranged attacks & projectile system
+    // ═══════════════════════════════════════════════════
+
+    cleanupEnemyBullets() {
+        const now = this.time.now;
+        this.enemyBullets.getChildren().forEach(b => {
+            if (!b.active) return;
+            const expireAt = b.getData('expireAt');
+            if (expireAt && now >= expireAt) {
+                b.setActive(false).setVisible(false);
+                b.body.stop();
+            }
+            // Also cleanup if off-screen
+            if (b.x < -20 || b.x > 820 || b.y < -20 || b.y > 620) {
+                b.setActive(false).setVisible(false);
+                b.body.stop();
+            }
+        });
+    }
+
+    fireEnemyBullet(zerg, target, damage, speed) {
+        if (!target || !target.alive) return;
+        const bullet = this.enemyBullets.get(zerg.x, zerg.y, 'enemy_bullet');
+        if (!bullet) return;
+
+        const angle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
+        bullet.setData('damage', damage || 8);
+        bullet.setData('expireAt', this.time.now + 4000);
+        bullet.setActive(true).setVisible(true);
+        bullet.body.enable = true;
+        bullet.body.setSize(10, 10);
+        bullet.body.setAllowGravity(false);
+        bullet.setPosition(
+            zerg.x + Math.cos(angle) * 20,
+            zerg.y + Math.sin(angle) * 20
+        );
+        bullet.setVelocity((speed || 220) * Math.cos(angle), (speed || 220) * Math.sin(angle));
+        bullet.setDepth(7);
+    }
+
+    enemyBulletHitTank(bullet, tank) {
+        if (!bullet.active || !tank.alive || (tank.invincible || 0) > 0) return;
+
+        const damage = bullet.getData('damage') || 8;
+        let remaining = damage;
+        if (tank.shield > 0) {
+            const absorbed = Math.min(tank.shield, remaining);
+            tank.shield -= absorbed;
+            remaining -= absorbed;
+        }
+        if (remaining > 0) {
+            tank.hp -= remaining;
+            tank.hp = Math.max(0, tank.hp);
+        }
+
+        bullet.setActive(false).setVisible(false);
+        bullet.body.stop();
+        this.spawnHitEffect(tank.x, tank.y);
+        this.playSound('hit_tank');
+    }
+
+    updateEnemyAI(dt) {
+        const zergs = this.zergGroup.getChildren();
+        for (const zerg of zergs) {
+            if (!zerg.active || zerg.hp <= 0) continue;
+
+            const type = zerg.getData('type');
+            const target = this.nearestTank(zerg.x, zerg.y);
+            if (!target || !target.alive) continue;
+
+            const dist = Phaser.Math.Distance.Between(zerg.x, zerg.y, target.x, target.y);
+
+            // ── Spitter AI (ranged, keeps distance) ──
+            if (type === 'spitter') {
+                zerg._fireTimer = (zerg._fireTimer || 0) - dt;
+                const PREFERRED = 200, TOO_CLOSE = 120;
+                const angle = Phaser.Math.Angle.Between(target.x, target.y, zerg.x, zerg.y);
+
+                if (dist < TOO_CLOSE) {
+                    // Back away
+                    zerg.setVelocity(Math.cos(angle) * 70, Math.sin(angle) * 70);
+                } else if (dist > PREFERRED + 60) {
+                    // Move closer
+                    zerg.setVelocity(-Math.cos(angle) * 50, -Math.sin(angle) * 50);
+                } else {
+                    zerg.setVelocity(0, 0);
+                }
+
+                if (dist < 380 && zerg._fireTimer <= 0) {
+                    this.fireEnemyBullet(zerg, target, 12, 200);
+                    zerg._fireTimer = 2500 + Math.random() * 500;
+                }
+            }
+
+            // ── Boss Ultra AI (ranged spread attack) ──
+            if (type === 'ultra_boss') {
+                zerg._fireTimer = (zerg._fireTimer || 0) - dt;
+                if (dist < 420 && zerg._fireTimer <= 0) {
+                    const baseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
+                    for (let i = -1; i <= 1; i++) {
+                        const spreadAngle = baseAngle + i * 0.22;
+                        const b = this.enemyBullets.get(zerg.x, zerg.y, 'enemy_bullet');
+                        if (b) {
+                            b.setData('damage', 20);
+                            b.setData('expireAt', this.time.now + 4000);
+                            b.setActive(true).setVisible(true);
+                            b.body.enable = true;
+                            b.body.setSize(10, 10);
+                            b.body.setAllowGravity(false);
+                            b.setPosition(
+                                zerg.x + Math.cos(spreadAngle) * 30,
+                                zerg.y + Math.sin(spreadAngle) * 30
+                            );
+                            b.setVelocity(280 * Math.cos(spreadAngle), 280 * Math.sin(spreadAngle));
+                            b.setDepth(7).setTint(0xff6644);  // Red-tinted for boss
+                        }
+                    }
+                    zerg._fireTimer = 3000 + Math.random() * 1000;
+                }
+            }
+        }
+    }
+
+    spawnSpitter(count, round) {
+        const tex = 'zerg_spitter';
+        const hp = 40 + round * 4;
+        const spd = 60;
+        const dmg = 8;
+
+        for (let i = 0; i < count; i++) {
+            const { x, y } = this.randomEdge();
+            const z = this.zergGroup.create(x, y, tex);
+            if (!z) continue;
+            this.physics.world.enable(z);
+            z.setDepth(8);
+            z.hp = hp;
+            z.setData('damage', dmg);
+            z.setData('rangedDamage', 12);
+            z.setData('type', 'spitter');
+            z.setData('points', 35);
+            z._hitCooldown = {};
+            z._fireTimer = 1500 + Math.random() * 1000;
+            z.body.setSize(52, 42);
+            z.body.enable = true;
+
+            const target = this.nearestTank(x, y);
+            if (target) {
+                const a = Phaser.Math.Angle.Between(x, y, target.x, target.y);
+                z.setVelocity(Math.cos(a) * spd, Math.sin(a) * spd);
+            }
+            // Spitters don't use the generic re-target timer; AI handles movement
+        }
+    }
+
+    // ═══════════════════════════════════════════════════
     //  WAVE SYSTEM
     // ═══════════════════════════════════════════════════
 
@@ -856,28 +1025,26 @@ export class GameScene extends Phaser.Scene {
             zerg_drone: [40, 30],
             zerg_roach: [48, 38],
             zerg_ultra: [72, 56],
+            zerg_spitter: [52, 42],
         };
 
-        const spawn = (tex, count, hp, spd, dmg, pts) => {
+        const spawn = (tex, count, hp, spd, dmg, pts, zergType) => {
             const [fw, fh] = sizeMap[tex] || [40, 30];
             for (let i = 0; i < count; i++) {
                 const { x, y } = this.randomEdge();
                 const z = this.zergGroup.create(x, y, tex);
                 if (!z) continue;
-                // Explicit physics world registration (critical for overlap detection)
                 this.physics.world.enable(z);
                 z.setDepth(8);
                 z.hp = hp;
                 z.setData('damage', dmg);
                 z.setData('points', pts);
+                if (zergType) z.setData('type', zergType);
                 z._hitCooldown = {};
                 z._lastHitTime = 0;
 
-                // EXPLICIT body size
                 z.body.setSize(fw, fh);
                 z.body.enable = true;
-
-                console.log('[spawnWave] Created zerg:', tex, 'at', x, y, 'HP:', hp, 'position:', z.x, z.y);
 
                 const target = this.nearestTank(x, y);
                 if (target) {
@@ -885,51 +1052,79 @@ export class GameScene extends Phaser.Scene {
                     z.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
                 }
 
-                // Animations disabled (no sprite sheets with multiple frames)
-                // Zerg will appear as static sprites
-                // const animKey = (tex === 'zerg_lings' || tex === 'zerg_roach') ? 'walk_' + tex :
-                //                 (tex === 'zerg_hydra' || tex === 'zerg_drone') ? 'fly_' + tex :
-                //                 (tex === 'zerg_ultra') ? 'stomp_' + tex : null;
-                // if (animKey && this.anims.exists(animKey)) z.play(animKey);
-
-                this.time.addEvent({
-                    delay: 2000,
-                    callback: () => {
-                        if (!z.active || z.hp <= 0) return;
-                        const t = this.nearestTank(z.x, z.y);
-                        if (t) {
-                            const a = Phaser.Math.Angle.Between(z.x, z.y, t.x, t.y);
-                            z.setVelocity(Math.cos(a) * spd, Math.sin(a) * spd);
-                        }
-                    },
-                    loop: true,
-                });
+                // Re-target timer (skip for AI-controlled types)
+                if (zergType !== 'spitter') {
+                    this.time.addEvent({
+                        delay: 2000,
+                        callback: () => {
+                            if (!z.active || z.hp <= 0) return;
+                            const t = this.nearestTank(z.x, z.y);
+                            if (t) {
+                                const a = Phaser.Math.Angle.Between(z.x, z.y, t.x, t.y);
+                                z.setVelocity(Math.cos(a) * spd, Math.sin(a) * spd);
+                            }
+                        },
+                        loop: true,
+                    });
+                }
             }
         };
 
-        // Rebalanced: zerglings 1-shot, others scaled proportionally
-        // Format: spawn(type, count, hp, speed, damage, points)
-        if (wave === 1) spawn('zerg_lings', 10, 15, 170, 15, 10);
-        else if (wave === 2) { spawn('zerg_lings', 10, 15, 170, 15, 10); spawn('zerg_hydra', 6, 30, 100, 12, 20); }
-        else if (wave === 3) { spawn('zerg_lings', 10, 15, 170, 15, 10); spawn('zerg_hydra', 6, 30, 100, 12, 20); spawn('zerg_drone', 7, 20, 140, 8, 15); }
-        else if (wave % 5 === 0) {
-            spawn('zerg_lings', 12, 15, 180, 15, 10);
-            spawn('zerg_hydra', 8, 30, 110, 12, 20);
-            spawn('zerg_drone', 8, 20, 150, 8, 15);
-            spawn('zerg_roach', 6, 60, 80, 25, 30);
-            spawn('zerg_ultra', 2, 120, 55, 40, 100);
-        } else if (wave <= 5) {
-            spawn('zerg_lings', 10, 15, 170, 15, 10);
-            spawn('zerg_hydra', 6, 30, 100, 12, 20);
-            spawn('zerg_drone', 7, 20, 140, 8, 15);
-            spawn('zerg_roach', Math.floor(wave / 2) + 3, 60, 75, 25, 30);
-        } else {
-            const scale = Math.floor((wave - 5) / 2) + 1;
-            spawn('zerg_lings', 10 + scale, 15, 180, 15, 10);
-            spawn('zerg_hydra', 6 + scale, 30, 110, 12, 20);
-            spawn('zerg_drone', 7 + scale, 20, 150, 8, 15);
-            spawn('zerg_roach', Math.min(scale * 3, 15), 60, 80, 25, 30);
-            if (wave % 3 === 0) spawn('zerg_ultra', 1 + Math.floor(scale / 2), 120, 55, 40, 100);
+        // ── Formula-based wave scaling for 100 rounds ──
+        const round = GameData.currentRound;
+        const isBossWave = (wave % 10 === 0);       // Major boss every 10 waves
+        const isMiniBossWave = (wave % 5 === 0);     // Ultra mini-boss every 5 waves
+
+        // Scaling: +12% per round, +6% per wave
+        const roundMult = 1 + (round - 1) * 0.12;
+        const waveMult = 1 + (wave - 1) * 0.06;
+
+        // Core melee swarm
+        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * roundMult), 15, 170 + round * 4, 15, 10);
+        spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * roundMult), 30 + round * 3, 100 + round * 2, 12, 20);
+        spawn('zerg_drone', Math.floor((5 + wave * 0.35) * roundMult), 20 + round * 2, 140 + round * 3, 8, 15);
+        spawn('zerg_roach', Math.floor((3 + wave * 0.25) * roundMult), 60 + round * 5, 75 + round * 2, 25, 30);
+
+        // Spitters from round 3+
+        if (round >= 3) {
+            const spitterCount = Math.floor((3 + wave * 0.3) * roundMult);
+            this.spawnSpitter(spitterCount, round);
+        }
+
+        // Mini-boss: Ultra every 5 waves
+        if (isMiniBossWave) {
+            const ultraHp = 120 + round * 15;
+            const ultraCount = 1 + Math.floor(wave / 15);
+            spawn('zerg_ultra', ultraCount, ultraHp, 55, 40 + round, 100);
+        }
+
+        // Boss wave: every 10 waves — super-sized ultra with ranged attack
+        if (isBossWave) {
+            const bossHp = 200 + round * 30;
+            const bossCount = 1 + Math.floor(wave / 30);
+            for (let i = 0; i < bossCount; i++) {
+                const { x, y } = this.randomEdge();
+                const z = this.zergGroup.create(x, y, 'zerg_ultra');
+                if (!z) continue;
+                this.physics.world.enable(z);
+                z.setDepth(8).setScale(1.3);
+                z.hp = bossHp;
+                z.setData('damage', 30);
+                z.setData('rangedDamage', 20);
+                z.setData('type', 'ultra_boss');
+                z.setData('points', 200);
+                z._hitCooldown = {};
+                z._fireTimer = 1000;
+                z.body.setSize(72, 56);
+                z.body.enable = true;
+
+                const target = this.nearestTank(x, y);
+                if (target) {
+                    const a = Phaser.Math.Angle.Between(x, y, target.x, target.y);
+                    z.setVelocity(Math.cos(a) * 55, Math.sin(a) * 55);
+                }
+            }
+            this.showWaveAnnounce(`⚠ BOSS WAVE ${wave} ⚠`);
         }
 
         GameData.p1Score += 25;
@@ -978,6 +1173,25 @@ export class GameScene extends Phaser.Scene {
             ctx.beginPath(); ctx.arc(5, 5, 3, 0, Math.PI * 2); ctx.fill();
             this.textures.addCanvas(key, canvas);
         }
+    }
+
+    generateEnemyBulletTexture() {
+        if (this.textures.exists('enemy_bullet')) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = 12; canvas.height = 12;
+        const ctx = canvas.getContext('2d');
+        const cx = 6, cy = 6;
+        const grad = ctx.createRadialGradient(cx, cy, 1, cx, cy, 6);
+        grad.addColorStop(0, 'rgba(200,255,60,0.95)');
+        grad.addColorStop(0.4, '#88cc00');
+        grad.addColorStop(0.8, 'rgba(80,160,20,0.6)');
+        grad.addColorStop(1, 'rgba(40,100,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+        // Bright core
+        ctx.fillStyle = '#eeff88';
+        ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+        this.textures.addCanvas('enemy_bullet', canvas);
     }
 
     spawnPowerup(x, y) {
@@ -1097,7 +1311,7 @@ export class GameScene extends Phaser.Scene {
         if (GameData.roundTimer <= 0) {
             if (GameData.gameMode === 'single' && this.tank1.alive) {
                 // Single: survived the round
-                if (GameData.currentRound >= 5) {
+                if (GameData.currentRound >= GameData.totalRounds) {
                     this.endMatch('single_win');
                 } else {
                     GameData.currentRound++;
@@ -1120,8 +1334,9 @@ export class GameScene extends Phaser.Scene {
         this.waveTimerEvent.destroy();
         this.shieldRegenEvent.destroy();
 
-        // Clear power-ups
+        // Clear power-ups and enemy bullets
         this.powerupGroup.clear(true, true);
+        this.enemyBullets.clear(true, true);
 
         if (this.tank1) GameData.p1Score += this.tank1.score || 0;
         if (this.tank2) GameData.p2Score += this.tank2.score || 0;
@@ -1131,7 +1346,8 @@ export class GameScene extends Phaser.Scene {
             GameData.coopRoundsSurvived = (GameData.coopRoundsSurvived || 0) + 1;
         }
 
-        if (GameData.currentRound >= 3) {
+        GameData.currentRound++;
+        if (GameData.currentRound > GameData.totalRounds) {
             this.endMatch('twoPlayer');
         } else {
             GameData.coopFailed = false;
@@ -1140,7 +1356,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     startNewRound() {
-        GameData.currentRound++;
+        // Destroy old timers to prevent timer leak (multiple timers running concurrently)
+        this.roundTimerEvent?.destroy();
+        this.waveTimerEvent?.destroy();
+        this.shieldRegenEvent?.destroy();
+
+        // NOTE: currentRound is incremented by the caller (onRoundTick/endRound) BEFORE calling this
         GameData.waveNumber = 0;
         GameData.roundTimer = 180;
         GameData.coopFailed = false;
@@ -1149,6 +1370,7 @@ export class GameScene extends Phaser.Scene {
         this._debugLogged = false;
 
         this.zergGroup.clear(true, true);
+        this.enemyBullets.clear(true, true);
 
         [this.tank1, this.tank2].forEach(tank => {
             if (!tank) return;
@@ -1289,7 +1511,7 @@ export class GameScene extends Phaser.Scene {
                 if (bothDead && stats.coopFailed) {
                     title.textContent = '💀 ANNIHILATED!';
                     title.style.color = '#ff2222';
-                } else if (stats.coopSurvived >= 3) {
+                } else if (stats.coopSurvived >= GameData.totalRounds) {
                     title.textContent = '🏆 MISSION COMPLETE!';
                     title.style.color = '#44ff44';
                 } else if (anyAlive) {
@@ -1404,9 +1626,9 @@ export class GameScene extends Phaser.Scene {
         s('timer-display', `${m}:${sec.toString().padStart(2, '0')}`);
 
         if (GameData.gameMode === 'twoPlayer') {
-            s('round-display', `ROUND ${GameData.currentRound} | ${GameData.p1RoundsWon} — ${GameData.p2RoundsWon}`);
+            s('round-display', `CO-OP ROUND ${GameData.currentRound}/${GameData.totalRounds}`);
         } else {
-            s('round-display', `SINGLE PLAYER - ${GameData.currentRound}/5`);
+            s('round-display', `SINGLE PLAYER - ${GameData.currentRound}/${GameData.totalRounds}`);
         }
     }
 

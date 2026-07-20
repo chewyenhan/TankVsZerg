@@ -22,6 +22,7 @@ const GameData = {
     gameMode: 'single',
     coopFailed: false,
     coopRoundsSurvived: 0,
+    totalRounds: 100,     // configurable; set by MenuScene based on mode
 };
 window.GameData = GameData;
 
