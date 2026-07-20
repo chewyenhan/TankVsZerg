@@ -42,6 +42,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
 #center-info span { display: block; }
 #wave-display { font-size: 20px; font-weight: bold; color: #ffcc00; }
 #timer-display { font-size: 18px; color: #fff; }
+#nuke-display { font-size: 16px; color: #ffcc00; font-weight: bold; }
 #round-display { font-size: 14px; color: #aaa; }
 
 .hud-label { font-size: 18px; font-weight: bold; }
@@ -194,5 +195,104 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
 .stat-label { text-align: left !important; color: #aaa; }
 .stat-p1 { color: #ff6644; }
 .stat-p2 { color: #44aaff; }
+
+/* ===== Boss HP Bar ===== */
+#boss-hp-bar {
+    position: fixed;
+    top: 60px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+}
+#boss-hp-label {
+    font-size: 18px; font-weight: bold; color: #ff4444;
+    text-shadow: 0 0 8px rgba(255,0,0,0.6);
+}
+.boss-hp-track {
+    width: 300px; height: 16px;
+    background: rgba(0,0,0,0.7);
+    border: 2px solid #ff4444;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.boss-hp-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #ff0000, #ff4444, #ff8844);
+    transition: width 0.3s ease;
+}
+
+/* ===== Keybinding Overlay ===== */
+#keybind-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 35;
+    pointer-events: auto;
+}
+#keybind-box {
+    text-align: center;
+    color: #f4ecd8;
+    font-family: 'Courier New', monospace;
+    padding: 30px;
+    background: rgba(20,20,40,0.95);
+    border: 2px solid #c9a44c;
+    border-radius: 12px;
+    min-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+#keybind-box h2 { font-size: 24px; color: #c9a44c; margin-bottom: 16px; }
+#keybind-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 80px 1fr 1fr 80px;
+    gap: 6px 10px;
+    margin-bottom: 8px;
+}
+.keybind-header {
+    font-size: 12px;
+    color: #c9a44c;
+    font-weight: bold;
+    text-align: center;
+    padding: 4px;
+}
+.keybind-row-label {
+    font-size: 14px;
+    color: #ccc;
+    text-align: right;
+    padding: 6px 8px;
+}
+.keybind-btn {
+    font-size: 15px;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    padding: 6px 10px;
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    min-width: 70px;
+    transition: all 0.15s;
+}
+.keybind-btn:hover { background: rgba(255,255,255,0.2); border-color: #c9a44c; }
+.keybind-btn.listening {
+    background: #c9a44c;
+    color: #000;
+    border-color: #ffcc00;
+    animation: keyPulse 0.6s ease-in-out infinite;
+}
+@keyframes keyPulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(255,200,0,0.4); }
+    50% { box-shadow: 0 0 16px rgba(255,200,0,0.9); }
+}
+.keybind-actions { margin-top: 12px; }
 
 /* ===== Menu Scene Styles (Phaser drawn, no DOM needed) ===== */

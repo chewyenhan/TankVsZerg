@@ -132,6 +132,18 @@ export class MenuScene extends Phaser.Scene {
             color: '#666',
         }).setOrigin(0.5);
 
+        // Customize Controls button (opens DOM overlay)
+        const btnCfg = this.add.text(cx, cy + 245, '⚙ CUSTOMIZE CONTROLS', {
+            fontSize: '14px',
+            fontFamily: 'Courier New',
+            color: '#c9a44c',
+            backgroundColor: '#1a1a1a',
+            padding: { x: 12, y: 6 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        btnCfg.on('pointerdown', () => { if (window.openKeybinds) window.openKeybinds(); });
+        btnCfg.on('pointerover', () => btnCfg.setStyle({ backgroundColor: '#333' }));
+        btnCfg.on('pointerout', () => btnCfg.setStyle({ backgroundColor: '#1a1a1a' }));
+
         // Select single player by default
         this.selectGameMode('single');
 
@@ -194,8 +206,8 @@ export class MenuScene extends Phaser.Scene {
         // Reset survival state
         GameData.p1HP = 100;
         GameData.p2HP = 100;
-        GameData.p1Shield = 0;
-        GameData.p2Shield = 0;
+        GameData.p1Shield = 30;
+        GameData.p2Shield = 30;
         GameData.p1Score = 0;
         GameData.p2Score = 0;
         GameData.p1Streak = 0;

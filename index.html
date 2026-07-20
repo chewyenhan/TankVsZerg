@@ -22,6 +22,7 @@
         <div id="center-info">
             <span id="wave-display">WAVE 1</span>
             <span id="timer-display">0:00</span>
+            <span id="nuke-display">☢ x0</span>
             <span id="round-display">SOLO SURVIVAL</span>
         </div>
         <div id="p2-hud">
@@ -47,6 +48,32 @@
         <button class="pause-btn" style="color:#ff4444;border-color:#ff4444;" onclick="forfeitRound('p1')">P1 Forfeit</button>
         <button class="pause-btn" style="color:#4488ff;border-color:#4488ff;" onclick="forfeitRound('p2')">P2 Forfeit</button>
     </div>
+</div>
+
+<!-- Keybinding overlay -->
+<div id="keybind-overlay" style="display:none;">
+    <div id="keybind-box">
+        <h2>⚙ CUSTOMIZE CONTROLS</h2>
+        <div id="keybind-grid">
+            <div class="keybind-header">Player 1 (Red)</div>
+            <div class="keybind-header">Action</div>
+            <div class="keybind-header">Key</div>
+            <div class="keybind-header">Player 2 (Blue)</div>
+            <div class="keybind-header">Action</div>
+            <div class="keybind-header">Key</div>
+        </div>
+        <div class="keybind-actions">
+            <p style="color:#aaa;font-size:14px;">Click a key button, then press the new key on your keyboard.</p>
+            <button class="pause-btn" id="keybind-save-btn" style="background:#c9a44c;color:#000;font-weight:bold;margin-top:12px;">SAVE & CLOSE</button>
+            <button class="pause-btn" style="margin-top:6px;" onclick="closeKeybinds()">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<!-- Boss HP bar (shown during boss fight) -->
+<div id="boss-hp-bar" style="display:none;">
+    <span id="boss-hp-label">BOSS</span>
+    <div class="boss-hp-track"><div class="boss-hp-fill" id="boss-hp-fill"></div></div>
 </div>
 
 <!-- Game Over overlay -->
