@@ -118,188 +118,90 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ═══════════════════════════════════════════════════
-    //  AUDIO SYSTEM
+    //  AUDIO SYSTEM (real SFX with oscillator fallback)
     // ═══════════════════════════════════════════════════
 
+    /** SFX mapping: old oscillator type → new audio key */
+    static SFX_MAP = {
+        fire_red: 'sfx_shoot',
+        fire_blue: 'sfx_shoot',
+        burst: 'sfx_shoot',
+        shield: 'sfx_shield',
+        hit_zerg: 'sfx_hit_zerg',
+        hit_tank: 'sfx_hit_tank',
+        explosion: 'sfx_explosion_small',
+        explosion_large: 'sfx_explosion_large',
+        wave_start: 'sfx_wave_start',
+        powerup: 'sfx_powerup',
+        nuke: 'sfx_nuke',
+        swarm: 'sfx_swarm',
+        boss: 'sfx_boss_warning',
+    };
+
     setupAudio() {
-        console.log('[GameScene] Setting up audio...');
-        // Use global shared context, or create one
-        if (!window.__gameAudioCtx) {
-            try {
-                window.__gameAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                console.log('[GameScene] Created AudioContext');
-            } catch (_) {
-                window.__gameAudioCtx = null;
-                console.error('[GameScene] Failed to create AudioContext');
-            }
-        }
-        this.audioCtx = window.__gameAudioCtx;
-
-        // Try to resume (needs user gesture)
-        if (this.audioCtx && this.audioCtx.state === 'suspended') {
-            try {
-                this.audioCtx.resume();
-                console.log('[GameScene] Resumed AudioContext');
-            } catch (e) {
-                console.error('[GameScene] Failed to resume AudioContext:', e);
-            }
-        }
-
-        // Master gain node
-        if (!window.__masterGain && this.audioCtx) {
-            try {
-                window.__masterGain = this.audioCtx.createGain();
-                window.__masterGain.gain.value = 0.3;
-                window.__masterGain.connect(this.audioCtx.destination);
-                console.log('[GameScene] Created master gain node');
-            } catch (e) {
-                console.error('[GameScene] Failed to create master gain:', e);
-            }
-        }
-        this.masterGain = window.__masterGain;
-
-        // BGM state
+        // Audio is managed by Phaser's sound manager (Web Audio or HTML5 Audio)
+        this.sound.volume = 0.3;
         this._bgmPlaying = false;
+        this._bgmMusic = null;
+    }
+
+    /** Play a sound effect (real file preferred, oscillator fallback if missing) */
+    playSound(type) {
+        const sfxKey = GameScene.SFX_MAP[type];
+        if (sfxKey && this.cache.audio.exists(sfxKey)) {
+            try {
+                this.sound.play(sfxKey, { volume: 0.3 });
+                return;
+            } catch (_) { /* fall back to oscillator */ }
+        }
+        // Oscillator fallback — minimal beep
+        this._oscBeep(type);
+    }
+
+    /** Minimal oscillator beep as fallback */
+    _oscBeep(type) {
+        if (!this._oscCtx) {
+            try {
+                this._oscCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (_) { return; }
+        }
+        const ctx = this._oscCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        try {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const t = ctx.currentTime;
+            const freq = type === 'fire_red' ? 180 : type === 'fire_blue' ? 260 : 440;
+            osc.type = 'square';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.05, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+            osc.start(t); osc.stop(t + 0.1);
+        } catch (_) { /* audio unavailable */ }
     }
 
     startBGM() {
-        if (!this.audioCtx || this._bgmPlaying) return;
-        this._bgmPlaying = true;
-
-        const ctx = this.audioCtx;
-        const master = this.masterGain;
-
-        const scheduleNote = () => {
-            if (!this._bgmPlaying || !this.scene.isActive()) return;
-
+        if (this._bgmPlaying) return;
+        if (this.cache.audio.exists('bgm_battle')) {
             try {
-                const now = ctx.currentTime;
-
-                // Bass drum
-                const bass = ctx.createOscillator();
-                const bassGain = ctx.createGain();
-                bass.type = 'sine';
-                bass.frequency.value = 55;
-                bassGain.gain.setValueAtTime(0.06, now);
-                bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-                bass.connect(bassGain);
-                bassGain.connect(master);
-                bass.start(now);
-                bass.stop(now + 0.3);
-
-                // Second beat
-                const bass2 = ctx.createOscillator();
-                const bg2 = ctx.createGain();
-                bass2.type = 'sine';
-                bass2.frequency.value = 65;
-                bg2.gain.setValueAtTime(0.04, now + 0.5);
-                bg2.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-                bass2.connect(bg2);
-                bg2.connect(master);
-                bass2.start(now + 0.5);
-                bass2.stop(now + 0.8);
-
-                // Schedule next beat
-                this._bgmTimer = this.time.delayedCall(1000, scheduleNote);
-            } catch (e) {
-                console.error('[BGM] Error scheduling note:', e);
-                this._bgmPlaying = false;
-            }
-        };
-
-        try {
-            scheduleNote();
-        } catch (e) {
-            console.error('[BGM] Error starting BGM:', e);
-            this._bgmPlaying = false;
+                this._bgmMusic = this.sound.add('bgm_battle', { volume: 0.15, loop: true });
+                this._bgmMusic.play();
+                this._bgmPlaying = true;
+                return;
+            } catch (_) { /* fall back to oscillator */ }
         }
+        // Oscillator BGM fallback skipped — silence is fine if no BGM file
+        this._bgmPlaying = true;
     }
 
     stopBGM() {
         this._bgmPlaying = false;
-        if (this._bgmTimer) this._bgmTimer.destroy();
-    }
-
-    playSound(type) {
-        if (!this.audioCtx || !this.masterGain) return;
-        try {
-            const ctx = this.audioCtx;
-            const master = this.masterGain;
-            const t = ctx.currentTime;
-
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(master);
-
-            switch (type) {
-                case 'fire_red':
-                    osc.type = 'square'; osc.frequency.value = 180;
-                    gain.gain.setValueAtTime(0.08, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-                    osc.start(t); osc.stop(t + 0.1);
-                    break;
-                case 'fire_blue':
-                    osc.type = 'square'; osc.frequency.value = 260;
-                    gain.gain.setValueAtTime(0.08, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-                    osc.start(t); osc.stop(t + 0.1);
-                    break;
-                case 'burst':
-                    osc.type = 'square'; osc.frequency.value = 130;
-                    gain.gain.setValueAtTime(0.06, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-                    osc.start(t); osc.stop(t + 0.15);
-                    break;
-                case 'shield':
-                    osc.type = 'sine'; osc.frequency.value = 800;
-                    gain.gain.setValueAtTime(0.04, t);
-                    osc.frequency.exponentialRampToValueAtTime(200, t + 0.2);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-                    osc.start(t); osc.stop(t + 0.3);
-                    break;
-                case 'hit_zerg':
-                    osc.type = 'square'; osc.frequency.value = 600;
-                    gain.gain.setValueAtTime(0.05, t);
-                    osc.frequency.exponentialRampToValueAtTime(100, t + 0.06);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-                    osc.start(t); osc.stop(t + 0.1);
-                    break;
-                case 'hit_tank':
-                    osc.type = 'sawtooth'; osc.frequency.value = 120;
-                    gain.gain.setValueAtTime(0.08, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-                    osc.start(t); osc.stop(t + 0.2);
-                    break;
-                case 'explosion':
-                    osc.type = 'sawtooth'; osc.frequency.value = 80;
-                    gain.gain.setValueAtTime(0.12, t);
-                    osc.frequency.exponentialRampToValueAtTime(20, t + 0.3);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-                    osc.start(t); osc.stop(t + 0.35);
-                    break;
-                case 'explosion_large':
-                    osc.type = 'sawtooth'; osc.frequency.value = 50;
-                    gain.gain.setValueAtTime(0.18, t);
-                    osc.frequency.exponentialRampToValueAtTime(15, t + 0.5);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-                    osc.start(t); osc.stop(t + 0.55);
-                    break;
-                case 'wave_start':
-                    osc.type = 'triangle'; osc.frequency.value = 330;
-                    gain.gain.setValueAtTime(0.06, t);
-                    osc.frequency.setValueAtTime(440, t + 0.1);
-                    osc.frequency.setValueAtTime(550, t + 0.2);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-                    osc.start(t); osc.stop(t + 0.45);
-                    break;
-                default:
-                    osc.frequency.value = 440;
-                    gain.gain.setValueAtTime(0.03, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-                    osc.start(t); osc.stop(t + 0.1);
-            }
-        } catch (_) { /* audio unavailable */ }
+        if (this._bgmMusic) {
+            try { this._bgmMusic.stop(); } catch (_) {}
+            this._bgmMusic = null;
+        }
     }
 
     // ═══════════════════════════════════════════════════
@@ -311,13 +213,20 @@ export class GameScene extends Phaser.Scene {
         tank.setCollideWorldBounds(true);
         tank.setDepth(10);
         tank.player = playerId;
-        tank.hp = 100;
-        tank.maxHp = 100;
-        tank.shield = 30;
-        tank.maxShield = 30;
+
+        // Apply tech tree bonuses
+        const tt = window.TechTree || {};
+        const bonusHP = (tt.armor || 0) * 15;
+        const bonusShield = (tt.shieldCap || 0) * 5;
+        const bonusNukeCap = (tt.nukeCap || 0);
+
+        tank.hp = 100 + bonusHP;
+        tank.maxHp = 100 + bonusHP;
+        tank.shield = 30 + bonusShield;
+        tank.maxShield = 30 + bonusShield;
         tank.invincible = 500;        // 0.5s spawn protection
-        tank.damageBoost = 0;         // Power-up stacks (0-3, +5 damage each)
-        tank.nukeCharges = 0;         // Stored nukes (max 3)
+        tank.nukeCharges = 0;         // Stored nukes (max 3 + tech bonus)
+        tank.maxNukes = 3 + bonusNukeCap;
         tank.swarmTimer = 0;          // Swarm missile launcher duration (ms)
         tank.swarmActive = false;     // Whether swarm missiles are active
         tank._swarmFireTimer = 0;     // Cooldown between swarm missile shots
@@ -326,6 +235,13 @@ export class GameScene extends Phaser.Scene {
         tank.kills = 0;
         tank.streak = 0;
         tank.maxStreak = 0;
+
+        // Weapon evolution system (replaces old damageBoost)
+        tank.weaponLevel = 1;         // Lv1-5 weapon evolution
+        tank.weaponExp = 0;           // Current exp progress
+        tank.weaponNextExp = 3;       // Exp needed for next level
+        const WEAPON_EXP_TABLE = [0, 3, 6, 11, 19]; // cumulative exp for each level
+        tank._weaponExpTable = WEAPON_EXP_TABLE;
 
         // Auto-detect texture size for proper body sizing
         const tex = this.textures.get(texture);
@@ -398,6 +314,7 @@ export class GameScene extends Phaser.Scene {
         this.updateHUD();
         this.cleanupExpiredBullets();
         this.cleanupEnemyBullets();
+        this.manualEnemyBulletTankCollision();  // Manual fallback — bypasses Phaser overlap bugs
         this.updateEnemyAI(delta);  // FIXED: pass delta (ms) not dt (seconds)
         this.updateSwarmMissiles(delta);
 
@@ -499,6 +416,51 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    /**
+     * MANUAL distance-based collision: enemy bullets ↔ tanks.
+     * Bypasses Phaser's physics overlap entirely (unreliable for fast projectiles).
+     */
+    manualEnemyBulletTankCollision() {
+        try {
+            const bullets = this.enemyBullets.getChildren();
+            for (const bullet of bullets) {
+                if (!bullet.active) continue;
+                const dmg = bullet.getData('damage') || 8;
+
+                for (const tank of [this.tank1, this.tank2]) {
+                    if (!tank || !tank.alive || (tank.invincible || 0) > 0) continue;
+
+                    const dist = Phaser.Math.Distance.Between(bullet.x, bullet.y, tank.x, tank.y);
+                    const hitRadius = 28; // bullet (16) + tank (~56) / 2 ≈ 28 effective
+
+                    if (dist < hitRadius) {
+                        // Apply damage
+                        let remaining = dmg;
+                        if (tank.shield > 0) {
+                            const absorbed = Math.min(tank.shield, remaining);
+                            tank.shield -= absorbed;
+                            remaining -= absorbed;
+                        }
+                        if (remaining > 0) {
+                            tank.hp -= remaining;
+                            tank.hp = Math.max(0, tank.hp);
+                        }
+
+                        // Deactivate bullet
+                        bullet.setActive(false).setVisible(false);
+                        bullet.body.stop();
+
+                        this.spawnHitEffect(tank.x, tank.y);
+                        this.playSound('hit_tank');
+                        break; // bullet consumed, move to next bullet
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[manualEnemyBulletTankCollision] Error:', e);
+        }
+    }
+
     // ═══════════════════════════════════════════════════
     //  TANK HANDLING
     // ═══════════════════════════════════════════════════
@@ -557,7 +519,8 @@ export class GameScene extends Phaser.Scene {
             // Main fire (hold to fire in manual mode)
             if (fireKey.isDown && (tank._fireTimer || 0) <= 0) {
                 this.fireBullet(tank, player === 'p1' ? this.bulletsP1 : this.bulletsP2, player);
-                tank._fireTimer = 500;
+                const tt = window.TechTree || {};
+                tank._fireTimer = 500 - (tt.fireRate || 0) * 60;  // Tech tree fire rate bonus
                 this.playSound(player === 'p1' ? 'fire_red' : 'fire_blue');
             }
 
@@ -638,7 +601,8 @@ export class GameScene extends Phaser.Scene {
         const bulletGroup = player === 'p1' ? this.bulletsP1 : this.bulletsP2;
         if (target.zerg && target.distance <= AUTO_FIRE_RANGE && (tank._fireTimer || 0) <= 0) {
             this.fireBullet(tank, bulletGroup, player);
-            tank._fireTimer = 500;
+            const tt = window.TechTree || {};
+            tank._fireTimer = 500 - (tt.fireRate || 0) * 60;
             this.playSound(player === 'p1' ? 'fire_red' : 'fire_blue');
         }
 
@@ -679,28 +643,73 @@ export class GameScene extends Phaser.Scene {
 
     fireBullet(tank, bulletGroup, player) {
         const tex = player === 'p1' ? 'bullet_red' : 'bullet_blue';
-        const bullet = bulletGroup.get(tank.x, tank.y, tex);
-        if (!bullet) return;
-
         const angle = tank.rotation;
-        bullet.setData('damage', 15 + (tank.damageBoost || 0) * 5);
-        bullet.setData('owner', player);
-        bullet.setData('expireAt', this.time.now + 3000);  // time-based expiry (avoids closure bug)
+        const tt = window.TechTree || {};
+        const weaponLevel = tank.weaponLevel || 1;
+        const weaponBonuses = [0, 5, 10, 15, 25]; // damage bonus per weapon level
+        const baseDamage = 15 + (tt.attack || 0) * 3 + weaponBonuses[weaponLevel - 1];
 
-        // Scale bullet based on damage boost level (0→1.0, 1→1.3, 2→1.6, 3→2.0)
-        const boost = tank.damageBoost || 0;
-        const scaleArr = [1.0, 1.3, 1.6, 2.0];
-        const bulletScale = scaleArr[boost] || 1.0;
-        const bs = Math.round(10 * bulletScale);
+        const spawnBullet = (offsetAngle, offsetX, offsetY, piercing) => {
+            const bullet = bulletGroup.get(tank.x, tank.y, tex);
+            if (!bullet) return;
+            bullet.setData('damage', baseDamage);
+            bullet.setData('owner', player);
+            bullet.setData('expireAt', this.time.now + 3000);
+            if (piercing) bullet.setData('piercing', true);
 
-        bullet.setActive(true).setVisible(true);
-        bullet.body.enable = true;
-        bullet.body.setSize(bs, bs);
-        bullet.body.setAllowGravity(false);
-        bullet.setScale(bulletScale);
-        bullet.setPosition(tank.x + Math.cos(angle) * 20, tank.y + Math.sin(angle) * 20);
-        bullet.setVelocity(400 * Math.cos(angle), 400 * Math.sin(angle));
-        bullet.setDepth(5);
+            // Scale: bigger at higher weapon levels
+            const scaleByLevel = [1.0, 1.1, 1.2, 1.4, 1.8];
+            const bs = Math.round(10 * scaleByLevel[weaponLevel - 1]);
+
+            bullet.setActive(true).setVisible(true);
+            bullet.body.enable = true;
+            bullet.body.setSize(bs, bs);
+            bullet.body.setAllowGravity(false);
+            bullet.setScale(scaleByLevel[weaponLevel - 1]);
+            const a = angle + offsetAngle;
+            bullet.setPosition(tank.x + Math.cos(a) * 20 + offsetX, tank.y + Math.sin(a) * 20 + offsetY);
+            bullet.setVelocity(400 * Math.cos(a), 400 * Math.sin(a));
+            bullet.setDepth(5);
+        };
+
+        switch (weaponLevel) {
+            case 1: // Single shot
+                spawnBullet(0, 0, 0, false);
+                break;
+            case 2: // Dual parallel (2 bullets, 8px spacing)
+                spawnBullet(0, 0, -4, false);
+                spawnBullet(0, 0, 4, false);
+                break;
+            case 3: // 5-way spread (40° fan)
+                for (let i = -2; i <= 2; i++) {
+                    spawnBullet(i * 0.14, 0, 0, false);
+                }
+                break;
+            case 4: // 3-way piercing (bullets don't disappear on zerg hit)
+                for (let i = -1; i <= 1; i++) {
+                    spawnBullet(i * 0.12, 0, 0, true);
+                }
+                break;
+            case 5: // MAX — Laser beam + splash
+                // Fire a thick beam (represented as a large fast bullet with splash)
+                const beam = bulletGroup.get(tank.x, tank.y, tex);
+                if (beam) {
+                    beam.setData('damage', baseDamage);
+                    beam.setData('owner', player);
+                    beam.setData('expireAt', this.time.now + 800);
+                    beam.setData('laser', true);  // Splash on hit
+                    beam.setActive(true).setVisible(true);
+                    beam.body.enable = true;
+                    beam.body.setSize(18, 18);
+                    beam.body.setAllowGravity(false);
+                    beam.setScale(2.0);
+                    beam.setTint(0xff8800);  // Orange laser
+                    beam.setPosition(tank.x + Math.cos(angle) * 20, tank.y + Math.sin(angle) * 20);
+                    beam.setVelocity(500 * Math.cos(angle), 500 * Math.sin(angle));
+                    beam.setDepth(5);
+                }
+                break;
+        }
 
         this.cameras.main.shake(50, 0.002);
     }
@@ -708,19 +717,22 @@ export class GameScene extends Phaser.Scene {
     fireBurst(tank, player) {
         const bulletGroup = player === 'p1' ? this.bulletsP1 : this.bulletsP2;
         const baseAngle = tank.rotation;
+        const tt = window.TechTree || {};
+        const weaponLevel = tank.weaponLevel || 1;
+        const weaponBonuses = [0, 5, 10, 15, 25];
+        const baseDamage = 8 + Math.floor(((tt.attack || 0) * 3 + weaponBonuses[weaponLevel - 1]) * 0.5);
         for (let i = -1; i <= 1; i++) {
             const angle = baseAngle + i * 0.2;
             const tex = player === 'p1' ? 'bullet_red' : 'bullet_blue';
             const bullet = bulletGroup.get(tank.x, tank.y, tex);
             if (!bullet) continue;
 
-            bullet.setData('damage', 8 + Math.floor((tank.damageBoost || 0) * 2.5));
+            bullet.setData('damage', baseDamage);
             bullet.setData('owner', player);
-            bullet.setData('expireAt', this.time.now + 3000);  // time-based expiry
+            bullet.setData('expireAt', this.time.now + 3000);
 
-            const boost = tank.damageBoost || 0;
-            const scaleArr = [1.0, 1.3, 1.6, 2.0];
-            const bScale = scaleArr[boost] || 1.0;
+            const scaleByLevel = [1.0, 1.1, 1.2, 1.4, 1.8];
+            const bScale = scaleByLevel[weaponLevel - 1];
             const bz = Math.round(10 * bScale);
 
             bullet.setActive(true).setVisible(true);
@@ -755,18 +767,31 @@ export class GameScene extends Phaser.Scene {
     // ═══════════════════════════════════════════════════
 
     bulletHitZerg(bullet, zerg) {
-        console.log('[bulletHitZerg] Bullet hit zerg!', bullet, zerg, zerg.hp);
-        if (!bullet.active || !zerg.active || zerg.hp === undefined) {
-            console.log('[bulletHitZerg] Skipping - bullet or zerg inactive');
-            return;
-        }
+        if (!bullet.active || !zerg.active || zerg.hp === undefined) return;
         const damage = bullet.getData('damage') || 15;
-        console.log('[bulletHitZerg] Applying', damage, 'damage to zerg');
         zerg.hp -= damage;
         zerg.setData('lastHitBy', bullet.getData('owner') || 'p1');
 
-        bullet.setActive(false).setVisible(false);
-        bullet.body.stop();
+        // Laser splash: 80px radius to nearby zergs
+        if (bullet.getData('laser')) {
+            const splashRadius = 80;
+            this.zergGroup.getChildren().forEach(nearby => {
+                if (!nearby.active || nearby === zerg || nearby.hp <= 0) return;
+                const d = Phaser.Math.Distance.Between(zerg.x, zerg.y, nearby.x, nearby.y);
+                if (d < splashRadius) {
+                    nearby.hp -= Math.floor(damage * 0.5);  // 50% splash damage
+                    nearby.setData('lastHitBy', bullet.getData('owner') || 'p1');
+                    this.spawnHitEffect(nearby.x, nearby.y);
+                }
+            });
+        }
+
+        // Piercing bullets don't disappear on hit
+        const piercing = bullet.getData('piercing');
+        if (!piercing && !bullet.getData('laser')) {
+            bullet.setActive(false).setVisible(false);
+            bullet.body.stop();
+        }
         this.spawnHitEffect(zerg.x, zerg.y);
         this.playSound('hit_zerg');
         // Splash damage to nearby zergs
@@ -948,7 +973,7 @@ export class GameScene extends Phaser.Scene {
         bullet.setActive(true).setVisible(true);
         bullet.body.reset(bx, by);
         bullet.body.enable = true;
-        bullet.body.setSize(12, 12);
+        bullet.body.setSize(16, 16);
         bullet.body.setAllowGravity(false);
         bullet.body.updateBounds();
         bullet.setVelocity((speed || 220) * Math.cos(angle), (speed || 220) * Math.sin(angle));
@@ -1012,11 +1037,11 @@ export class GameScene extends Phaser.Scene {
                 }
             }
 
-            // ── Boss Ultra AI (chase + spread attack) ──
+            // ── Boss Ultra AI (chase + continuous machine-gun fire) ──
             if (type === 'ultra_boss') {
                 zerg._fireTimer = (zerg._fireTimer || 0) - delta;
 
-                // Chase the nearest tank (was missing — boss just drifted away!)
+                // Chase the nearest tank
                 const chaseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
                 const chaseSpeed = 55;
                 zerg.setVelocity(
@@ -1024,26 +1049,10 @@ export class GameScene extends Phaser.Scene {
                     Math.sin(chaseAngle) * chaseSpeed
                 );
 
-                // Fire 3-spread projectiles when in range
+                // Continuous fire — single bullets at 250ms intervals (like a machine gun)
                 if (dist < 420 && zerg._fireTimer <= 0) {
-                    const baseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
-                    for (let i = -1; i <= 1; i++) {
-                        const spreadAngle = baseAngle + i * 0.22;
-                        const b = this.enemyBullets.get(zerg.x, zerg.y, 'enemy_bullet');
-                        if (b) {
-                            b.setData('damage', 20);
-                            b.setData('expireAt', this.time.now + 4000);
-                            b.setActive(true).setVisible(true);
-                            b.body.reset(zerg.x + Math.cos(spreadAngle) * 30, zerg.y + Math.sin(spreadAngle) * 30);
-                            b.body.enable = true;
-                            b.body.setSize(12, 12);
-                            b.body.setAllowGravity(false);
-                            b.body.updateBounds();
-                            b.setVelocity(280 * Math.cos(spreadAngle), 280 * Math.sin(spreadAngle));
-                            b.setDepth(7).setTint(0xff6644);  // Red-tinted for boss
-                        }
-                    }
-                    zerg._fireTimer = 3000 + Math.random() * 1000;  // ms
+                    this.fireEnemyBullet(zerg, target, 20, 300);  // damage=20, speed=300
+                    zerg._fireTimer = 250;  // fire every 250ms — rapid continuous fire
                 }
             }
         }
@@ -1251,25 +1260,33 @@ export class GameScene extends Phaser.Scene {
         const isBossWave = (wave % 10 === 0);       // Major boss every 10 waves
         const isMiniBossWave = (wave % 5 === 0);     // Ultra mini-boss every 5 waves
 
+        // Co-op difficulty scaling — more enemies + tougher enemies for 2 players
+        const coopCountMult = GameData.gameMode === 'twoPlayer' ? 1.6 : 1.0;
+        const coopHPMult = GameData.gameMode === 'twoPlayer' ? 1.3 : 1.0;
+
         // Base difficulty scales with wave number (+8% per wave)
         const waveMult = 1 + (wave - 1) * 0.08;
 
-        // Core melee swarm
-        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * waveMult), 15 + wave, 170 + wave * 4, 15, 10);
-        spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * waveMult), 30 + wave * 3, 100 + wave * 2, 12, 20);
-        spawn('zerg_drone', Math.floor((5 + wave * 0.35) * waveMult), 20 + wave * 2, 140 + wave * 3, 8, 15);
-        spawn('zerg_roach', Math.floor((3 + wave * 0.25) * waveMult), 60 + wave * 5, 75 + wave * 2, 25, 30);
+        // ── Breathing wave: after boss wave, reduce enemy count by 50% ──
+        const isBreathWave = ((wave - 1) % 10 === 0 && wave > 1);
+        const breathMult = isBreathWave ? 0.5 : 1.0;
+
+        // Core melee swarm (with breath wave reduction)
+        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * waveMult * coopCountMult * breathMult), Math.floor((15 + wave) * coopHPMult), 170 + wave * 4, 15, 10);
+        spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * waveMult * coopCountMult * breathMult), Math.floor((30 + wave * 3) * coopHPMult), 100 + wave * 2, 12, 20);
+        spawn('zerg_drone', Math.floor((5 + wave * 0.35) * waveMult * coopCountMult * breathMult), Math.floor((20 + wave * 2) * coopHPMult), 140 + wave * 3, 8, 15);
+        spawn('zerg_roach', Math.floor((3 + wave * 0.25) * waveMult * coopCountMult * breathMult), Math.floor((60 + wave * 5) * coopHPMult), 75 + wave * 2, 25, 30);
 
         // Spitters from wave 5+
         if (wave >= 5) {
-            const spitterCount = Math.floor((3 + wave * 0.3) * waveMult);
+            const spitterCount = Math.floor((3 + wave * 0.3) * waveMult * coopCountMult * breathMult);
             this.spawnSpitter(spitterCount, wave);
         }
 
         // Mini-boss: Ultra every 5 waves (but NOT on boss waves — boss handles its own)
         if (isMiniBossWave && !isBossWave) {
-            const ultraHp = 120 + wave * 15;
-            const ultraCount = 1 + Math.floor(wave / 15);
+            const ultraHp = Math.floor((120 + wave * 15) * coopHPMult);
+            const ultraCount = Math.max(1, Math.floor((1 + Math.floor(wave / 15)) * coopCountMult * breathMult));
             spawn('zerg_ultra', ultraCount, ultraHp, 55, 40 + wave, 100);
         }
 
@@ -1309,7 +1326,9 @@ export class GameScene extends Phaser.Scene {
     spawnBossWave() {
         this._bossWaveState = 'boss_fight';
         const wave = GameData.waveNumber;
-        const bossHp = 200 + wave * 30;
+        // Co-op boss has +50% HP
+        const bossHpMult = GameData.gameMode === 'twoPlayer' ? 1.5 : 1.0;
+        const bossHp = Math.floor((200 + wave * 30) * bossHpMult);
 
         const { x, y } = this.randomEdge();
         const z = this.zergGroup.create(x, y, 'zerg_ultra');
@@ -1348,6 +1367,8 @@ export class GameScene extends Phaser.Scene {
     /** Boss killed — clean up and resume next wave */
     onBossKilled() {
         this._bossWaveState = 'boss_down';
+        const bossX = this._bossZerg ? this._bossZerg.x : 400;
+        const bossY = this._bossZerg ? this._bossZerg.y : 300;
         this._bossZerg = null;
 
         // Hide boss HP bar
@@ -1364,6 +1385,13 @@ export class GameScene extends Phaser.Scene {
             z.hp = 0;
             this.spawnExplosion(z.x, z.y);
             z.destroy();
+        });
+
+        // ── Boss guaranteed drops ──
+        this.time.delayedCall(500, () => {
+            this.spawnPowerup(bossX - 30, bossY, 'damage');    // Weapon EXP (gold cannon)
+            this.spawnPowerup(bossX + 30, bossY, 'nuke');      // Nuke
+            this.spawnPowerup(bossX, bossY - 20, 'heal');      // Heal
         });
 
         // Resume wave timer after short delay
@@ -1496,6 +1524,28 @@ export class GameScene extends Phaser.Scene {
             ctx3.restore();
             this.textures.addCanvas('orb_swarm', c3);
         }
+
+        // ── Green Heal (cross icon) ──
+        if (!this.textures.exists('orb_heal')) {
+            const c4 = document.createElement('canvas');
+            c4.width = 32; c4.height = 32;
+            const ctx4 = c4.getContext('2d');
+            // Glow
+            const glow4 = ctx4.createRadialGradient(16, 16, 5, 16, 16, 16);
+            glow4.addColorStop(0, 'rgba(60,255,80,0.7)');
+            glow4.addColorStop(1, 'rgba(60,255,80,0)');
+            ctx4.fillStyle = glow4;
+            ctx4.beginPath(); ctx4.arc(16, 16, 16, 0, Math.PI * 2); ctx4.fill();
+            // Green cross
+            ctx4.fillStyle = '#44ff44';
+            ctx4.fillRect(10, 4, 12, 24);  // vertical bar
+            ctx4.fillRect(4, 10, 24, 12);  // horizontal bar
+            // Highlight
+            ctx4.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx4.fillRect(11, 4, 4, 24);
+            ctx4.fillRect(4, 11, 24, 4);
+            this.textures.addCanvas('orb_heal', c4);
+        }
     }
 
     generateEnemyBulletTexture() {
@@ -1543,9 +1593,9 @@ export class GameScene extends Phaser.Scene {
         this.textures.addCanvas('swarm_missile', canvas);
     }
 
-    spawnPowerup(x, y) {
-        const types = ['damage', 'swarm', 'nuke'];
-        const type = types[Phaser.Math.Between(0, 2)];
+    spawnPowerup(x, y, forcedType) {
+        const types = ['damage', 'swarm', 'nuke', 'heal'];
+        const type = forcedType || types[Phaser.Math.Between(0, types.length - 1)];
         const orb = this.powerupGroup.create(x, y, 'orb_' + type);
         if (!orb) return;
         orb.setDepth(9);
@@ -1567,10 +1617,27 @@ export class GameScene extends Phaser.Scene {
         if (!tank.alive || !orb.active) return;
         const type = orb.getData('type');
         switch (type) {
+            case 'heal':
+                tank.hp = Math.min(tank.maxHp, tank.hp + 30);
+                this.showFloatingText(tank.x, tank.y - 24, '+30 HP', '#44ff44');
+                break;
             case 'damage':
-                if ((tank.damageBoost || 0) < 3) {
-                    tank.damageBoost = (tank.damageBoost || 0) + 1;
-                    this.showFloatingText(tank.x, tank.y - 24, `DMG +${tank.damageBoost * 5}`, '#ff2222');
+                // Weapon evolution: collect exp to level up (1→5)
+                tank.weaponExp = (tank.weaponExp || 0) + 1;
+                const table = tank._weaponExpTable || [0, 3, 6, 11, 19];
+                const currentLevel = tank.weaponLevel || 1;
+
+                // Check if we can level up
+                if (currentLevel < 5 && tank.weaponExp >= table[currentLevel]) {
+                    tank.weaponLevel = currentLevel + 1;
+                    tank.weaponNextExp = table[currentLevel + 1] || 999;
+                    const levelNames = ['', 'DUAL CANNON', 'SPREAD SHOT', 'PIERCE CANNON', 'MAX LASER'];
+                    this.showFloatingText(tank.x, tank.y - 30, `⬆ ${levelNames[tank.weaponLevel]}!`, '#ff8844');
+                } else if (currentLevel < 5) {
+                    const needed = table[currentLevel] - tank.weaponExp;
+                    this.showFloatingText(tank.x, tank.y - 24, `EXP +1 (${needed} to Lv${currentLevel + 1})`, '#ffaa44');
+                } else {
+                    this.showFloatingText(tank.x, tank.y - 24, 'WEAPON MAX!', '#ff4400');
                 }
                 break;
             case 'swarm':
@@ -1581,7 +1648,7 @@ export class GameScene extends Phaser.Scene {
                 this.showFloatingText(tank.x, tank.y - 24, 'SWARM MISSILES!', '#4488ff');
                 break;
             case 'nuke':
-                if ((tank.nukeCharges || 0) < 3) {
+                if ((tank.nukeCharges || 0) < (tank.maxNukes || 3)) {
                     tank.nukeCharges = (tank.nukeCharges || 0) + 1;
                     this.showFloatingText(tank.x, tank.y - 24, `NUKE x${tank.nukeCharges}`, '#ffcc00');
                 }
@@ -1681,7 +1748,7 @@ export class GameScene extends Phaser.Scene {
                 name: GameData.p1Name,
                 kills: p1.kills || 0,
                 maxStreak: p1.maxStreak || 0,
-                damageBoost: p1.damageBoost || 0,
+                weaponLevel: p1.weaponLevel || 1,
                 nukes: p1.nukeCharges || 0,
                 score: GameData.p1Score,
                 alive: p1.alive,
@@ -1692,7 +1759,7 @@ export class GameScene extends Phaser.Scene {
                 name: GameData.p2Name,
                 kills: p2.kills || 0,
                 maxStreak: p2.maxStreak || 0,
-                damageBoost: p2.damageBoost || 0,
+                weaponLevel: p2.weaponLevel || 1,
                 nukes: p2.nukeCharges || 0,
                 score: GameData.p2Score,
                 alive: p2.alive,
@@ -1704,6 +1771,15 @@ export class GameScene extends Phaser.Scene {
             survivalSec: survivalSec,
             mode: GameData.gameMode,
         };
+
+        // Tech points earned this run
+        const totalKills = (p1 ? p1.kills : 0) + (p2 ? p2.kills : 0);
+        const techPointsEarned = Math.floor(stats.waves * totalKills / 10);
+        if (window.TechTree) {
+            window.TechTree.techPoints += techPointsEarned;
+            window.saveTechTree();
+        }
+        const totalTechPoints = window.TechTree ? window.TechTree.techPoints : techPointsEarned;
 
         document.getElementById('hud').style.display = 'none';
 
@@ -1724,6 +1800,7 @@ export class GameScene extends Phaser.Scene {
             // Single player death → leaderboard
             title.textContent = `💀 ${GameData.p1Name} DEFEATED!`;
             title.style.color = '#ff2222';
+            const weaponNames = ['', 'Basic', 'Dual', 'Spread', 'Pierce', 'MAX'];
             statsEl.innerHTML = `
                 <p style="font-size:18px;margin-bottom:12px;">The Zerg overran your defenses</p>
                 <table class="score-table">
@@ -1732,10 +1809,13 @@ export class GameScene extends Phaser.Scene {
                     ${singleRow('Waves Survived', stats.waves)}
                     ${singleRow('Kills', stats.p1.kills)}
                     ${singleRow('Max Streak', stats.p1.maxStreak)}
-                    ${singleRow('Damage Boost', '+' + (stats.p1.damageBoost * 5))}
+                    ${singleRow('Weapon Lv', weaponNames[stats.p1.weaponLevel] + ' Lv' + stats.p1.weaponLevel)}
                     ${singleRow('Nukes Held', stats.p1.nukes)}
                     ${singleRow('Final Score', stats.p1.score)}
                 </table>
+                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 Tech Points Earned: +${techPointsEarned}</p>
+                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} × ${totalKills} kills / 10)</p>
+                <p style="font-size:14px;color:#c9a44c;">Total Tech Points: ${totalTechPoints}</p>
             `;
         } else {
             // Two-player co-op: both dead → leaderboard
@@ -1761,12 +1841,15 @@ export class GameScene extends Phaser.Scene {
                     ${coopRow('Kills', stats.p1.kills, stats.p2.kills)}
                     ${coopRow('Max Streak', stats.p1.maxStreak, stats.p2.maxStreak)}
                     ${coopRow('Waves Faced', stats.waves, stats.waves)}
-                    ${coopRow('Damage Boost', '+' + (stats.p1.damageBoost * 5), '+' + (stats.p2.damageBoost * 5))}
+                    ${coopRow('Weapon Lv', weaponNames[stats.p1.weaponLevel] + ' Lv' + stats.p1.weaponLevel, weaponNames[stats.p2.weaponLevel] + ' Lv' + stats.p2.weaponLevel)}
                     ${coopRow('Nukes Held', stats.p1.nukes, stats.p2.nukes)}
                     ${coopRow('HP Remaining', stats.p1.hp, stats.p2.hp)}
                     ${coopRow('Shield', stats.p1.shield, stats.p2.shield)}
                     ${coopRow('Final Score', stats.p1.score, stats.p2.score)}
                 </table>
+                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 Tech Points Earned: +${techPointsEarned}</p>
+                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} × ${totalKills} kills / 10)</p>
+                <p style="font-size:14px;color:#c9a44c;">Total Tech Points: ${totalTechPoints}</p>
             `;
         }
         overlay.style.display = 'flex';
@@ -1934,6 +2017,13 @@ export class GameScene extends Phaser.Scene {
             if (!t || !t.alive || !t.body) return;
             this.debugGfx.lineStyle(1.5, 0xffff00, 0.7);
             this.debugGfx.strokeRect(t.body.x, t.body.y, t.body.width, t.body.height);
+        });
+
+        // Enemy bullet bodies (red)
+        this.enemyBullets.getChildren().forEach(b => {
+            if (!b.active || !b.body) return;
+            this.debugGfx.lineStyle(1, 0xff0000, 0.6);
+            this.debugGfx.strokeRect(b.body.x, b.body.y, b.body.width, b.body.height);
         });
     }
 }

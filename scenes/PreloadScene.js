@@ -38,6 +38,20 @@ export class PreloadScene extends Phaser.Scene {
         this.load.image('bullet_red', 'assets/kenney_tanks/PNG/Retina/bulletRed1.png');
         this.load.image('bullet_blue', 'assets/kenney_tanks/PNG/Retina/bulletBlue1.png');
 
+        // ── Load Sound Effects ──
+        this.load.audio('sfx_shoot', 'assets/sfx/sfx_shoot.wav');
+        this.load.audio('sfx_explosion_small', 'assets/sfx/sfx_explosion_small.wav');
+        this.load.audio('sfx_explosion_large', 'assets/sfx/sfx_explosion_large.wav');
+        this.load.audio('sfx_hit_tank', 'assets/sfx/sfx_hit_tank.wav');
+        this.load.audio('sfx_hit_zerg', 'assets/sfx/sfx_hit_zerg.wav');
+        this.load.audio('sfx_shield', 'assets/sfx/sfx_shield.wav');
+        this.load.audio('sfx_powerup', 'assets/sfx/sfx_powerup.wav');
+        this.load.audio('sfx_nuke', 'assets/sfx/sfx_nuke.wav');
+        this.load.audio('sfx_wave_start', 'assets/sfx/sfx_wave_start.wav');
+        this.load.audio('sfx_boss_warning', 'assets/sfx/sfx_boss_warning.wav');
+        this.load.audio('sfx_swarm', 'assets/sfx/sfx_swarm.wav');
+        this.load.audio('bgm_battle', 'assets/sfx/bgm_battle.mp3');
+
         // Explosion spritesheet (5 frames, 64x64 each)
         this.load.spritesheet('explosion', 'assets/sprites/explosion.png', { frameWidth: 64, frameHeight: 64 });
 

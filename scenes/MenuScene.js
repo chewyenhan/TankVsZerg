@@ -132,8 +132,20 @@ export class MenuScene extends Phaser.Scene {
             color: '#666',
         }).setOrigin(0.5);
 
+        // Tech Tree button (opens DOM overlay)
+        const btnTech = this.add.text(cx - 120, cy + 245, '🔬 TECH TREE', {
+            fontSize: '14px',
+            fontFamily: 'Courier New',
+            color: '#c9a44c',
+            backgroundColor: '#1a1a1a',
+            padding: { x: 12, y: 6 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        btnTech.on('pointerdown', () => { if (window.openTechTree) window.openTechTree(); });
+        btnTech.on('pointerover', () => btnTech.setStyle({ backgroundColor: '#333' }));
+        btnTech.on('pointerout', () => btnTech.setStyle({ backgroundColor: '#1a1a1a' }));
+
         // Customize Controls button (opens DOM overlay)
-        const btnCfg = this.add.text(cx, cy + 245, '⚙ CUSTOMIZE CONTROLS', {
+        const btnCfg = this.add.text(cx + 120, cy + 245, '⚙ CUSTOMIZE CONTROLS', {
             fontSize: '14px',
             fontFamily: 'Courier New',
             color: '#c9a44c',
@@ -203,11 +215,14 @@ export class MenuScene extends Phaser.Scene {
             window.__gameAudioCtx.resume().catch(() => {});
         }
 
-        // Reset survival state
-        GameData.p1HP = 100;
-        GameData.p2HP = 100;
-        GameData.p1Shield = 30;
-        GameData.p2Shield = 30;
+        // Reset survival state (apply tech tree bonuses)
+        const tt = window.TechTree || {};
+        const bonusHP = (tt.armor || 0) * 15;
+        const bonusShield = (tt.shieldCap || 0) * 5;
+        GameData.p1HP = 100 + bonusHP;
+        GameData.p2HP = 100 + bonusHP;
+        GameData.p1Shield = 30 + bonusShield;
+        GameData.p2Shield = 30 + bonusShield;
         GameData.p1Score = 0;
         GameData.p2Score = 0;
         GameData.p1Streak = 0;
