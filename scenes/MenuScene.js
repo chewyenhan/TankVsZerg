@@ -215,14 +215,14 @@ export class MenuScene extends Phaser.Scene {
             window.__gameAudioCtx.resume().catch(() => {});
         }
 
-        // Reset survival state (apply tech tree bonuses)
-        const tt = window.TechTree || {};
-        const bonusHP = (tt.armor || 0) * 15;
-        const bonusShield = (tt.shieldCap || 0) * 5;
-        GameData.p1HP = 100 + bonusHP;
-        GameData.p2HP = 100 + bonusHP;
-        GameData.p1Shield = 30 + bonusShield;
-        GameData.p2Shield = 30 + bonusShield;
+        // Reset survival state (apply per-player tech tree bonuses)
+        const gtt = window.getTechTree;
+        const tt1 = (gtt ? gtt('p1') : window.TechTree) || {};
+        const tt2 = (gtt ? gtt('p2') : window.TechTree) || {};
+        GameData.p1HP = 100 + (tt1.armor || 0) * 15;
+        GameData.p2HP = 100 + (tt2.armor || 0) * 15;
+        GameData.p1Shield = 30 + (tt1.shieldCap || 0) * 5;
+        GameData.p2Shield = 30 + (tt2.shieldCap || 0) * 5;
         GameData.p1Score = 0;
         GameData.p2Score = 0;
         GameData.p1Streak = 0;

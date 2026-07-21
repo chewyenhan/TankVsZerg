@@ -110,9 +110,7 @@ export class GameScene extends Phaser.Scene {
         // ── Initial wave ──
         this.time.delayedCall(2000, () => this.spawnWave());
 
-        // ── Start BGM (will be audible after AudioContext is resumed by user gesture) ──
-        this.startBGM();
-
+        // BGM now only plays during boss fights — not during normal waves
         this.showWaveAnnounce('WAVE 1');
         this.updateHUD();
     }
@@ -214,8 +212,8 @@ export class GameScene extends Phaser.Scene {
         tank.setDepth(10);
         tank.player = playerId;
 
-        // Apply tech tree bonuses
-        const tt = window.TechTree || {};
+        // Apply per-player tech tree bonuses
+        const tt = (window.getTechTree ? window.getTechTree(playerId) : window.TechTree) || {};
         const bonusHP = (tt.armor || 0) * 15;
         const bonusShield = (tt.shieldCap || 0) * 5;
         const bonusNukeCap = (tt.nukeCap || 0);
@@ -519,7 +517,7 @@ export class GameScene extends Phaser.Scene {
             // Main fire (hold to fire in manual mode)
             if (fireKey.isDown && (tank._fireTimer || 0) <= 0) {
                 this.fireBullet(tank, player === 'p1' ? this.bulletsP1 : this.bulletsP2, player);
-                const tt = window.TechTree || {};
+                const tt = (window.getTechTree ? window.getTechTree(player) : window.TechTree) || {};
                 tank._fireTimer = 500 - (tt.fireRate || 0) * 60;  // Tech tree fire rate bonus
                 this.playSound(player === 'p1' ? 'fire_red' : 'fire_blue');
             }
@@ -601,7 +599,7 @@ export class GameScene extends Phaser.Scene {
         const bulletGroup = player === 'p1' ? this.bulletsP1 : this.bulletsP2;
         if (target.zerg && target.distance <= AUTO_FIRE_RANGE && (tank._fireTimer || 0) <= 0) {
             this.fireBullet(tank, bulletGroup, player);
-            const tt = window.TechTree || {};
+            const tt = (window.getTechTree ? window.getTechTree(player) : window.TechTree) || {};
             tank._fireTimer = 500 - (tt.fireRate || 0) * 60;
             this.playSound(player === 'p1' ? 'fire_red' : 'fire_blue');
         }
@@ -644,7 +642,7 @@ export class GameScene extends Phaser.Scene {
     fireBullet(tank, bulletGroup, player) {
         const tex = player === 'p1' ? 'bullet_red' : 'bullet_blue';
         const angle = tank.rotation;
-        const tt = window.TechTree || {};
+        const tt = (window.getTechTree ? window.getTechTree(player) : window.TechTree) || {};
         const weaponLevel = tank.weaponLevel || 1;
         const weaponBonuses = [0, 5, 10, 15, 25]; // damage bonus per weapon level
         const baseDamage = 15 + (tt.attack || 0) * 3 + weaponBonuses[weaponLevel - 1];
@@ -717,7 +715,7 @@ export class GameScene extends Phaser.Scene {
     fireBurst(tank, player) {
         const bulletGroup = player === 'p1' ? this.bulletsP1 : this.bulletsP2;
         const baseAngle = tank.rotation;
-        const tt = window.TechTree || {};
+        const tt = (window.getTechTree ? window.getTechTree(player) : window.TechTree) || {};
         const weaponLevel = tank.weaponLevel || 1;
         const weaponBonuses = [0, 5, 10, 15, 25];
         const baseDamage = 8 + Math.floor(((tt.attack || 0) * 3 + weaponBonuses[weaponLevel - 1]) * 0.5);
@@ -1360,6 +1358,8 @@ export class GameScene extends Phaser.Scene {
         document.getElementById('boss-hp-label').textContent = `BOSS WAVE ${wave}`;
 
         this.showWaveAnnounce(`BOSS ENGAGED!`);
+        this.playSound('boss');           // Single warning blast
+        this.startBGM();                 // Loop boss battle music
         this.playSound('explosion_large');
         this.cameras.main.shake(200, 0.01);
     }
@@ -1376,6 +1376,7 @@ export class GameScene extends Phaser.Scene {
 
         // Victory announcement
         this.showWaveAnnounce('BOSS DEFEATED! ☠');
+        this.stopBGM();                  // Stop boss music
         this.cameras.main.flash(300, 255, 200, 0);
         this.playSound('explosion_large');
 
@@ -1772,14 +1773,22 @@ export class GameScene extends Phaser.Scene {
             mode: GameData.gameMode,
         };
 
-        // Tech points earned this run
-        const totalKills = (p1 ? p1.kills : 0) + (p2 ? p2.kills : 0);
-        const techPointsEarned = Math.floor(stats.waves * totalKills / 10);
-        if (window.TechTree) {
-            window.TechTree.techPoints += techPointsEarned;
-            window.saveTechTree();
+        // Tech points earned this run — per-player independent settlement
+        const p1Kills = p1 ? (p1.kills || 0) : 0;
+        const p2Kills = p2 ? (p2.kills || 0) : 0;
+        const p1Earned = Math.floor(stats.waves * p1Kills / 10);
+        const p2Earned = (GameData.gameMode === 'twoPlayer') ? Math.floor(stats.waves * p2Kills / 10) : 0;
+
+        if (window.getTechTree) {
+            window.getTechTree('p1').techPoints += p1Earned;
+            window.saveTechTree('p1');
+            if (GameData.gameMode === 'twoPlayer') {
+                window.getTechTree('p2').techPoints += p2Earned;
+                window.saveTechTree('p2');
+            }
         }
-        const totalTechPoints = window.TechTree ? window.TechTree.techPoints : techPointsEarned;
+        const totalP1 = window.getTechTree ? window.getTechTree('p1').techPoints : p1Earned;
+        const totalP2 = window.getTechTree ? window.getTechTree('p2').techPoints : p2Earned;
 
         document.getElementById('hud').style.display = 'none';
 
@@ -1813,9 +1822,9 @@ export class GameScene extends Phaser.Scene {
                     ${singleRow('Nukes Held', stats.p1.nukes)}
                     ${singleRow('Final Score', stats.p1.score)}
                 </table>
-                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 Tech Points Earned: +${techPointsEarned}</p>
-                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} × ${totalKills} kills / 10)</p>
-                <p style="font-size:14px;color:#c9a44c;">Total Tech Points: ${totalTechPoints}</p>
+                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 Tech Points Earned: +${p1Earned}</p>
+                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} × ${p1Kills} kills / 10)</p>
+                <p style="font-size:14px;color:#c9a44c;">Total (P1): ${totalP1} pts</p>
             `;
         } else {
             // Two-player co-op: both dead → leaderboard
@@ -1847,9 +1856,9 @@ export class GameScene extends Phaser.Scene {
                     ${coopRow('Shield', stats.p1.shield, stats.p2.shield)}
                     ${coopRow('Final Score', stats.p1.score, stats.p2.score)}
                 </table>
-                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 Tech Points Earned: +${techPointsEarned}</p>
-                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} × ${totalKills} kills / 10)</p>
-                <p style="font-size:14px;color:#c9a44c;">Total Tech Points: ${totalTechPoints}</p>
+                <p style="font-size:16px;color:#ffcc00;margin-top:12px;">🔬 P1 Tech Points: +${p1Earned} (Total: ${totalP1})</p>
+                <p style="font-size:16px;color:#ffcc00;">🔬 P2 Tech Points: +${p2Earned} (Total: ${totalP2})</p>
+                <p style="font-size:14px;color:#aaa;">(Wave ${stats.waves} — P1: ${p1Kills} kills, P2: ${p2Kills} kills)</p>
             `;
         }
         overlay.style.display = 'flex';
@@ -1888,7 +1897,7 @@ export class GameScene extends Phaser.Scene {
         } else {
             overlay.style.display = 'none';
             this.scene.resume();
-            this.startBGM();
+            if (this._bossWaveState === 'boss_fight') this.startBGM();
         }
     }
 
@@ -1944,21 +1953,24 @@ export class GameScene extends Phaser.Scene {
             s('round-display', 'SOLO SURVIVAL');
         }
 
-        // Nuke count + Swarm timer
+        // Per-player Nuke count + Swarm timer
         const p1Nukes = this.tank1 ? (this.tank1.nukeCharges || 0) : 0;
         const p1Swarm = this.tank1 ? Math.ceil((this.tank1.swarmTimer || 0) / 1000) : 0;
+        s('p1-nuke', `☢ x${p1Nukes}`);
+        s('p1-swarm', p1Swarm > 0 ? `🚀 ${p1Swarm}s` : '');
+
         if (GameData.gameMode === 'twoPlayer') {
             const p2Nukes = this.tank2 ? (this.tank2.nukeCharges || 0) : 0;
             const p2Swarm = this.tank2 ? Math.ceil((this.tank2.swarmTimer || 0) / 1000) : 0;
-            let nukeText = `☢ P1:${p1Nukes} P2:${p2Nukes}`;
-            if (p1Swarm > 0 || p2Swarm > 0) {
-                nukeText += ` | 🚀 P1:${p1Swarm}s P2:${p2Swarm}s`;
-            }
-            s('nuke-display', nukeText);
+            s('p2-nuke', `☢ x${p2Nukes}`);
+            s('p2-swarm', p2Swarm > 0 ? `🚀 ${p2Swarm}s` : '');
+            // Simplified center display — just wave info, no duplication
+            s('nuke-display', '');
         } else {
-            let nukeText = `☢ x${p1Nukes}`;
-            if (p1Swarm > 0) nukeText += ` | 🚀 ${p1Swarm}s`;
-            s('nuke-display', nukeText);
+            const p2Nukes = this.tank2 ? (this.tank2.nukeCharges || 0) : 0;
+            s('p2-nuke', '');
+            s('p2-swarm', '');
+            s('nuke-display', '');  // cleaned up — info now on player panels
         }
     }
 

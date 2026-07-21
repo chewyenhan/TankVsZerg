@@ -34,15 +34,30 @@ const GameData = {
 };
 
 // ── Tech Tree (meta-progression, persisted in localStorage) ──
-const TechTree = {
-    attack: 0,      // Lv0-20, each +3 base damage (15→75 max)
-    armor: 0,       // Lv0-10, each +15 HP (100→250 max)
-    fireRate: 0,    // Lv0-5,  each -60ms fire interval (500→200ms max)
-    nukeCap: 0,     // Lv0-5,  each +1 nuke capacity (3→8 max)
-    shieldCap: 0,   // Lv0-5,  each +5 shield max (30→55 max)
-    swarmDur: 0,    // Lv0-5,  each +3s swarm duration (15→30s max)
-    techPoints: 0,  // available tech points to spend
-};
+// Each player has their own independent tech tree
+
+function makeTechTree() {
+    return {
+        attack: 0,      // Lv0-20, each +3 base damage (15→75 max)
+        armor: 0,       // Lv0-10, each +15 HP (100→250 max)
+        fireRate: 0,    // Lv0-5,  each -60ms fire interval (500→200ms max)
+        nukeCap: 0,     // Lv0-5,  each +1 nuke capacity (3→8 max)
+        shieldCap: 0,   // Lv0-5,  each +5 shield max (30→55 max)
+        swarmDur: 0,    // Lv0-5,  each +3s swarm duration (15→30s max)
+        techPoints: 0,  // available tech points to spend
+    };
+}
+
+const TechTreeP1 = makeTechTree();
+const TechTreeP2 = makeTechTree();
+
+// Backward-compatible reference — points to P1 by default
+const TechTree = TechTreeP1;
+
+/** Get the tech tree for a specific player */
+function getTechTree(player) {
+    return player === 'p2' ? TechTreeP2 : TechTreeP1;
+}
 
 // Tech tree upgrade costs
 const TECH_COSTS = {
@@ -61,35 +76,61 @@ const TECH_LABELS = {
 };
 const TECH_ICONS = { attack: '⚔', armor: '🛡', fireRate: '⏱', nukeCap: '☢', shieldCap: '🔰', swarmDur: '🚀' };
 
-// Load tech tree from localStorage
-try {
-    const saved = localStorage.getItem('tankVszerg_techtree');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        Object.assign(TechTree, parsed);
-    }
-} catch (_) { /* use defaults */ }
+// Load tech trees from localStorage
+function loadTechTree(player) {
+    const tree = getTechTree(player);
+    try {
+        const saved = localStorage.getItem(`tankVszerg_techtree_${player}`);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            Object.assign(tree, parsed);
+        }
+    } catch (_) { /* use defaults */ }
+}
+loadTechTree('p1');
+loadTechTree('p2');
+
+// Migrate old single-tree saves
+if (TechTreeP1.techPoints === 0 && TechTreeP2.techPoints === 0) {
+    try {
+        const old = localStorage.getItem('tankVszerg_techtree');
+        if (old) {
+            const parsed = JSON.parse(old);
+            Object.assign(TechTreeP1, parsed);
+            // Copy to P2 as well so returning players keep progress
+            Object.assign(TechTreeP2, parsed);
+            saveTechTree('p1');
+            saveTechTree('p2');
+            localStorage.removeItem('tankVszerg_techtree');  // clean up old key
+        }
+    } catch (_) { /* no old data */ }
+}
 
 /** Save tech tree to localStorage */
-function saveTechTree() {
+function saveTechTree(player) {
+    const tree = getTechTree(player);
     try {
-        localStorage.setItem('tankVszerg_techtree', JSON.stringify(TechTree));
+        localStorage.setItem(`tankVszerg_techtree_${player}`, JSON.stringify(tree));
     } catch (_) { /* localStorage not available */ }
 }
 
 /** Attempt to upgrade a tech — returns true on success */
-function upgradeTech(key) {
-    const level = TechTree[key];
+function upgradeTech(player, key) {
+    const tree = getTechTree(player);
+    const level = tree[key];
     if (level >= TECH_MAX[key]) return false;
     const cost = TECH_COSTS[key](level);
-    if (TechTree.techPoints < cost) return false;
-    TechTree.techPoints -= cost;
-    TechTree[key]++;
-    saveTechTree();
+    if (tree.techPoints < cost) return false;
+    tree.techPoints -= cost;
+    tree[key]++;
+    saveTechTree(player);
     return true;
 }
 
 window.TechTree = TechTree;
+window.TechTreeP1 = TechTreeP1;
+window.TechTreeP2 = TechTreeP2;
+window.getTechTree = getTechTree;
 window.upgradeTech = upgradeTech;
 window.saveTechTree = saveTechTree;
 window.TECH_COSTS = TECH_COSTS;
@@ -286,20 +327,31 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Tech Tree UI ──
-window.openTechTree = function () {
+let _techTreePlayer = 'p1';  // Which player's tree is currently shown
+window._techTreePlayer = 'p1';  // Exposed for inline onclick handlers
+
+window.openTechTree = function (player) {
+    if (player) { _techTreePlayer = player; window._techTreePlayer = player; }
+    const tree = getTechTree(_techTreePlayer);
     const overlay = document.getElementById('techtree-overlay');
     const grid = document.getElementById('techtree-grid');
     const ptsEl = document.getElementById('techtree-points');
+    const tabP1 = document.getElementById('techtree-tab-p1');
+    const tabP2 = document.getElementById('techtree-tab-p2');
+
+    // Highlight active tab
+    if (tabP1) tabP1.className = `techtree-tab ${_techTreePlayer === 'p1' ? 'active' : ''}`;
+    if (tabP2) tabP2.className = `techtree-tab ${_techTreePlayer === 'p2' ? 'active' : ''}`;
 
     // Update points display
-    ptsEl.textContent = `Available Points: ${TechTree.techPoints}`;
+    ptsEl.textContent = `${_techTreePlayer === 'p2' ? 'P2' : 'P1'} · Available Points: ${tree.techPoints}`;
 
     // Build grid
     grid.innerHTML = '';
     const keys = ['attack', 'armor', 'fireRate', 'nukeCap', 'shieldCap', 'swarmDur'];
 
     for (const key of keys) {
-        const level = TechTree[key];
+        const level = tree[key];
         const max = TECH_MAX[key];
         const cost = level < max ? TECH_COSTS[key](level) : '—';
         const icon = TECH_ICONS[key];
@@ -322,7 +374,7 @@ window.openTechTree = function () {
     grid.querySelectorAll('.techtree-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const key = btn.dataset.key;
-            if (upgradeTech(key)) {
+            if (upgradeTech(_techTreePlayer, key)) {
                 openTechTree(); // Refresh
             }
         });
@@ -333,6 +385,49 @@ window.openTechTree = function () {
 
 window.closeTechTree = function () {
     document.getElementById('techtree-overlay').style.display = 'none';
+};
+
+// ── Export / Import ──
+window.exportTechTree = function (player) {
+    const tree = getTechTree(player);
+    const json = JSON.stringify(tree, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `tankvszerg_save_${player}_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+window.importTechTree = function (player) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const data = JSON.parse(reader.result);
+                // Validate structure — must have at least one known key
+                const valid = ['attack', 'armor', 'fireRate', 'nukeCap', 'shieldCap', 'swarmDur', 'techPoints']
+                    .some(k => k in data);
+                if (!valid) { alert('Invalid save file!'); return; }
+                const tree = getTechTree(player);
+                // Only copy known keys to avoid pollution
+                for (const k of ['attack', 'armor', 'fireRate', 'nukeCap', 'shieldCap', 'swarmDur', 'techPoints']) {
+                    if (k in data) tree[k] = data[k];
+                }
+                saveTechTree(player);
+                openTechTree(player); // refresh UI
+            } catch (err) { alert(`Import failed: ${err.message}`); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 };
 
 window.returnToMenu = function () {
