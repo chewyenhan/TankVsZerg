@@ -180,6 +180,32 @@ export class GameScene extends Phaser.Scene {
         } catch (_) { /* audio unavailable */ }
     }
 
+    /** Short 3-beep alarm for boss entry (replaces long sfx_boss_warning.wav) */
+    _alarmBeep() {
+        if (!this._oscCtx) {
+            try {
+                this._oscCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (_) { return; }
+        }
+        const ctx = this._oscCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        try {
+            for (let i = 0; i < 3; i++) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                const t = ctx.currentTime + i * 0.25;
+                osc.type = 'square';
+                osc.frequency.value = 660 + i * 220;  // Rising tone: 660 → 880 → 1100 Hz
+                gain.gain.setValueAtTime(0.08, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+                osc.start(t);
+                osc.stop(t + 0.2);
+            }
+        } catch (_) { /* audio unavailable */ }
+    }
+
     startBGM() {
         if (this._bgmPlaying) return;
         if (this.cache.audio.exists('bgm_battle')) {
@@ -901,8 +927,8 @@ export class GameScene extends Phaser.Scene {
             if (zergType === 'ultra_boss') attacker.score += 100;
         }
 
-        // 10% chance to drop a power-up
-        if (Math.random() < 0.10) {
+        // 10% chance to drop a power-up (nuke-killed zergs never drop)
+        if (!zerg._nuked && Math.random() < 0.10) {
             this.spawnPowerup(zerg.x, zerg.y);
         }
 
@@ -1035,22 +1061,43 @@ export class GameScene extends Phaser.Scene {
                 }
             }
 
-            // ── Boss Ultra AI (chase + continuous machine-gun fire) ──
+            // ── Boss Ultra AI (chase + spread machine-gun fire) ──
             if (type === 'ultra_boss') {
                 zerg._fireTimer = (zerg._fireTimer || 0) - delta;
 
                 // Chase the nearest tank
                 const chaseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
-                const chaseSpeed = 55;
+                const chaseSpeed = 55 + GameData.waveNumber * 0.5;  // faster at higher waves
                 zerg.setVelocity(
                     Math.cos(chaseAngle) * chaseSpeed,
                     Math.sin(chaseAngle) * chaseSpeed
                 );
 
-                // Continuous fire — single bullets at 250ms intervals (like a machine gun)
-                if (dist < 420 && zerg._fireTimer <= 0) {
-                    this.fireEnemyBullet(zerg, target, 20, 300);  // damage=20, speed=300
-                    zerg._fireTimer = 250;  // fire every 250ms — rapid continuous fire
+                // Spread fire — bullet count scales with wave (1 at wave 10, 2 at 20, etc.)
+                if (dist < 450 && zerg._fireTimer <= 0) {
+                    const spreadCount = zerg.getData('spreadCount') || 1;
+                    const bossDmg = zerg.getData('bossDmg') || 20;
+                    const baseAngle = Phaser.Math.Angle.Between(zerg.x, zerg.y, target.x, target.y);
+                    const spreadDeg = 12;  // degrees between spread bullets
+
+                    for (let i = 0; i < spreadCount; i++) {
+                        let angle;
+                        if (spreadCount === 1) {
+                            angle = baseAngle;
+                        } else {
+                            const offset = (i - (spreadCount - 1) / 2) * (spreadDeg * Math.PI / 180);
+                            angle = baseAngle + offset;
+                        }
+                        // Use a virtual target at the computed angle (fireEnemyBullet needs a target)
+                        const vTarget = {
+                            x: zerg.x + Math.cos(angle) * 400,
+                            y: zerg.y + Math.sin(angle) * 400,
+                            alive: true
+                        };
+                        this.fireEnemyBullet(zerg, vTarget, bossDmg, 300);
+                    }
+                    // Fire rate improves slightly with wave (250ms → 180ms at high waves)
+                    zerg._fireTimer = Math.max(180, 250 - GameData.waveNumber);
                 }
             }
         }
@@ -1326,7 +1373,12 @@ export class GameScene extends Phaser.Scene {
         const wave = GameData.waveNumber;
         // Co-op boss has +50% HP
         const bossHpMult = GameData.gameMode === 'twoPlayer' ? 1.5 : 1.0;
-        const bossHp = Math.floor((200 + wave * 30) * bossHpMult);
+        // Boss HP: 10x scaling — wave 10 = 5000, wave 50 = 17000, wave 99 = 31700
+        const bossHp = Math.floor((2000 + wave * 300) * bossHpMult);
+        // Boss damage scales with wave
+        const bossDmg = 15 + wave * 2;
+        // Spread count: wave 10 = 1, wave 20 = 2, wave 30 = 3...
+        const spreadCount = Math.max(1, Math.floor(wave / 10));
 
         const { x, y } = this.randomEdge();
         const z = this.zergGroup.create(x, y, 'zerg_ultra');
@@ -1336,9 +1388,11 @@ export class GameScene extends Phaser.Scene {
         z.hp = bossHp;
         z.maxHp = bossHp;
         z.setData('damage', 30);
-        z.setData('rangedDamage', 20);
+        z.setData('rangedDamage', bossDmg);
         z.setData('type', 'ultra_boss');
         z.setData('points', 200);
+        z.setData('spreadCount', spreadCount);
+        z.setData('bossDmg', bossDmg);
         z._hitCooldown = {};
         z._fireTimer = 1000;
         z.body.setSize(72, 56);
@@ -1358,7 +1412,7 @@ export class GameScene extends Phaser.Scene {
         document.getElementById('boss-hp-label').textContent = `BOSS WAVE ${wave}`;
 
         this.showWaveAnnounce(`BOSS ENGAGED!`);
-        this.playSound('boss');           // Single warning blast
+        this._alarmBeep();               // Short 3-beep alarm (replaces long sfx_boss_warning.wav)
         this.startBGM();                 // Loop boss battle music
         this.playSound('explosion_large');
         this.cameras.main.shake(200, 0.01);
@@ -1674,11 +1728,12 @@ export class GameScene extends Phaser.Scene {
     activateNuke(tank, player) {
         if ((tank.nukeCharges || 0) <= 0) return;
         tank.nukeCharges--;
-        // Kill all on-screen zerg
+        // Kill all on-screen zerg (nuke-killed zergs drop no power-ups — no chain reaction)
         const zergs = this.zergGroup.getChildren();
         for (const z of zergs) {
             if (!z.active || z.hp <= 0) continue;
             z.setData('lastHitBy', player);
+            z._nuked = true;  // Flag to prevent power-up drops
             z.hp = 0;
             this.destroyZerg(z);
         }
