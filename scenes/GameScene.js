@@ -106,6 +106,7 @@ export class GameScene extends Phaser.Scene {
 
         // ── Audio setup ──
         this.setupAudio();
+        this._currentSfx = null;   // track currently playing SFX to prevent overlap
 
         // ── Initial wave ──
         this.time.delayedCall(2000, () => this.spawnWave());
@@ -148,7 +149,12 @@ export class GameScene extends Phaser.Scene {
         const sfxKey = GameScene.SFX_MAP[type];
         if (sfxKey && this.cache.audio.exists(sfxKey)) {
             try {
+                // Stop previous instance of the same sound to prevent stacking
+                if (this._currentSfx === sfxKey) {
+                    try { this.sound.stopByKey(sfxKey); } catch (_) {}
+                }
                 this.sound.play(sfxKey, { volume: 0.3 });
+                this._currentSfx = sfxKey;
                 return;
             } catch (_) { /* fall back to oscillator */ }
         }
