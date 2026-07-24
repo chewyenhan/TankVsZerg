@@ -255,8 +255,8 @@ export class GameScene extends Phaser.Scene {
         tank.shield = 30 + bonusShield;
         tank.maxShield = 30 + bonusShield;
         tank.invincible = 500;        // 0.5s spawn protection
-        tank.nukeCharges = 0;         // Stored nukes (max 3 + tech bonus)
-        tank.maxNukes = 3 + bonusNukeCap;
+        tank.nukeCharges = 0;         // Stored nukes (max 6 - fixed at 3 levels)
+        tank.maxNukes = 6;            // Hardcoded to 3 levels (3, 4, 5, 6 nukes)
         tank.swarmTimer = 0;          // Swarm missile launcher duration (ms)
         tank.swarmActive = false;     // Whether swarm missiles are active
         tank._swarmFireTimer = 0;     // Cooldown between swarm missile shots
@@ -1734,15 +1734,25 @@ export class GameScene extends Phaser.Scene {
     activateNuke(tank, player) {
         if ((tank.nukeCharges || 0) <= 0) return;
         tank.nukeCharges--;
-        // Kill all on-screen zerg (nuke-killed zergs drop no power-ups — no chain reaction)
+
+        // Damage calculation
         const zergs = this.zergGroup.getChildren();
         for (const z of zergs) {
             if (!z.active || z.hp <= 0) continue;
+
+            // Boss takes 2000 damage per nuke (fixed damage)
+            // Regular zergs take 100% damage (instant kill)
+            let damage = z.getData('rangedDamage') || 8;
+            if (z.getData('type') === 'ultra_boss') {
+                damage = 2000;  // Fixed damage for boss
+            }
+
             z.setData('lastHitBy', player);
             z._nuked = true;  // Flag to prevent power-up drops
-            z.hp = 0;
+            z.hp = Math.max(0, z.hp - damage);
             this.destroyZerg(z);
         }
+
         // Big visual feedback
         this.cameras.main.flash(500, 255, 255, 200);
         this.cameras.main.shake(300, 0.03);

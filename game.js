@@ -41,7 +41,7 @@ function makeTechTree() {
         attack: 0,      // Lv0-20, each +3 base damage (15→75 max)
         armor: 0,       // Lv0-10, each +15 HP (100→250 max)
         fireRate: 0,    // Lv0-5,  each -60ms fire interval (500→200ms max)
-        nukeCap: 0,     // Lv0-5,  each +1 nuke capacity (3→8 max)
+        nukeCap: 0,     // Lv0-3,  each +1 nuke capacity (3→6 max)
         shieldCap: 0,   // Lv0-5,  each +5 shield max (30→55 max)
         swarmDur: 0,    // Lv0-5,  each +3s swarm duration (15→30s max)
         techPoints: 0,  // available tech points to spend
@@ -59,17 +59,17 @@ function getTechTree(player) {
     return player === 'p2' ? TechTreeP2 : TechTreeP1;
 }
 
-// Tech tree upgrade costs
+// Tech tree upgrade costs — geometric growth (2× per level)
 const TECH_COSTS = {
-    attack:    level => 100 + level * 20,   // Lv0→20, total ~6200
-    armor:     level => 80 + level * 15,    // Lv0→10, total ~1625
-    fireRate:  level => 150 + level * 30,   // Lv0→5,  total ~1200
-    nukeCap:   level => 200 + level * 40,   // Lv0→5,  total ~1600
-    shieldCap: level => 120 + level * 25,   // Lv0→5,  total ~975
-    swarmDur:  level => 100 + level * 20,   // Lv0→5,  total ~800
+    attack:    level => Math.floor(50 * Math.pow(2, level)),     // 50 → 100 → 200 → 400 → 800
+    armor:     level => Math.floor(40 * Math.pow(2, level)),     // 40 → 80 → 160 → 320 → 640
+    fireRate:  level => Math.floor(75 * Math.pow(2, level)),     // 75 → 150 → 300 → 600 → 1200
+    nukeCap:   level => Math.floor(400 * Math.pow(2, level)),     // 400 → 800 → 1600
+    shieldCap: level => Math.floor(60 * Math.pow(2, level)),     // 60 → 120 → 240 → 480 → 960
+    swarmDur:  level => Math.floor(50 * Math.pow(2, level)),     // 50 → 100 → 200 → 400 → 800
 };
 
-const TECH_MAX = { attack: 20, armor: 10, fireRate: 5, nukeCap: 5, shieldCap: 5, swarmDur: 5 };
+const TECH_MAX = { attack: 20, armor: 10, fireRate: 5, nukeCap: 3, shieldCap: 5, swarmDur: 5 };
 const TECH_LABELS = {
     attack: 'Attack Power', armor: 'Armor (HP)', fireRate: 'Fire Rate',
     nukeCap: 'Nuke Capacity', shieldCap: 'Shield Capacity', swarmDur: 'Swarm Duration',
