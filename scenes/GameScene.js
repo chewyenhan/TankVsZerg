@@ -14,6 +14,9 @@ export class GameScene extends Phaser.Scene {
         super({ key: 'GameScene' });
     }
 
+    // ── Performance limits ──
+    MAX_ZERGS = 800;  // Maximum zerg on screen (prevents lag at high waves)
+
     create(data) {
         console.log('[GameScene] Creating scene...');
         GameData.waveNumber = 0;
@@ -103,6 +106,9 @@ export class GameScene extends Phaser.Scene {
         this._debugLogged = false;
         this._bossWaveState = null;   // null | 'clearing' | 'boss_incoming' | 'boss_fight' | 'boss_down'
         this._bossZerg = null;        // reference to the boss sprite during boss fight
+
+        // ── Performance limit: zerg queue (FIFO, max 800) ──
+        this.zergQueue = [];  // Queue of spawned zerg (when screen is full, new zerg replace oldest)
 
         // ── Audio setup ──
         this.setupAudio();
@@ -943,6 +949,11 @@ export class GameScene extends Phaser.Scene {
         if (zergType === 'ultra_boss' && this._bossWaveState === 'boss_fight') {
             this.onBossKilled();
         }
+        // ── Remove zerg from queue if on screen ──
+        const idx = this.zergQueue.findIndex(q => q.zergId === zerg.zergId);
+        if (idx !== -1) {
+            this.zergQueue.splice(idx, 1);  // Remove from queue
+        }
         // Check if all non-boss zergs cleared on a boss wave
         if (this._bossWaveState === 'clearing') {
             this.checkBossWaveClear();
@@ -1220,6 +1231,9 @@ export class GameScene extends Phaser.Scene {
         const spd = 60;
         const dmg = 8;
 
+        // Performance limit: spawn from queue first
+        this.spawnFromQueue();
+
         for (let i = 0; i < count; i++) {
             const { x, y } = this.randomEdge();
             const z = this.zergGroup.create(x, y, tex);
@@ -1233,6 +1247,7 @@ export class GameScene extends Phaser.Scene {
             z.setData('points', 35);
             z._hitCooldown = {};
             z._fireTimer = 1500 + Math.random() * 1000;
+            z.zergId = Date.now() + Math.random();  // Unique ID for queue tracking
             z.body.setSize(52, 42);
             z.body.enable = true;
 
@@ -1242,6 +1257,26 @@ export class GameScene extends Phaser.Scene {
                 z.setVelocity(Math.cos(a) * spd, Math.sin(a) * spd);
             }
             // Spitters don't use the generic re-target timer; AI handles movement
+
+            // Store in queue (will be spawned when screen is not full)
+            this.zergQueue.push({ zergId: z.zergId, texture: tex, x, y });
+        }
+    }
+
+    /**
+     * Spawn zerg from queue to maintain MAX_ZERGS limit.
+     * If queue has zerg and screen has less than MAX_ZERGS, spawn new zerg from queue.
+     */
+    spawnFromQueue() {
+        const currentCount = this.zergGroup.getChildren().filter(z => z.active && z.hp > 0).length;
+        const needToSpawn = Math.max(0, this.MAX_ZERGS - currentCount);
+
+        if (needToSpawn > 0 && this.zergQueue.length > 0) {
+            // Spawn from queue (FIFO - oldest first)
+            for (let i = 0; i < needToSpawn && this.zergQueue.length > 0; i++) {
+                const zergData = this.zergQueue.shift();  // Remove from front
+                this.zergGroup.create(zergData.x, zergData.y, zergData.texture);
+            }
         }
     }
 
@@ -1279,6 +1314,7 @@ export class GameScene extends Phaser.Scene {
                 if (zergType) z.setData('type', zergType);
                 z._hitCooldown = {};
                 z._lastHitTime = 0;
+                z.zergId = Date.now() + Math.random();  // Unique ID for queue tracking
 
                 z.body.setSize(fw, fh);
                 z.body.enable = true;
@@ -1304,6 +1340,9 @@ export class GameScene extends Phaser.Scene {
                         loop: true,
                     });
                 }
+
+                // Store in queue (FIFO - will be spawned when screen is not full)
+                this.zergQueue.push({ zergId: z.zergId, texture: tex, x, y });
             }
         };
 
@@ -1322,8 +1361,12 @@ export class GameScene extends Phaser.Scene {
         const isBreathWave = ((wave - 1) % 10 === 0 && wave > 1);
         const breathMult = isBreathWave ? 0.5 : 1.0;
 
+        // Performance limit: spawn zerg from queue to maintain MAX_ZERGS
+        this.spawnFromQueue();
+
         // Core melee swarm (with breath wave reduction)
-        spawn('zerg_lings', Math.floor((8 + wave * 0.5) * waveMult * coopCountMult * breathMult), Math.floor((15 + wave) * coopHPMult), 170 + wave * 4, 15, 10);
+        const zergCount = Math.floor((8 + wave * 0.5) * waveMult * coopCountMult * breathMult);
+        spawn('zerg_lings', zergCount, Math.floor((15 + wave) * coopHPMult), 170 + wave * 4, 15, 10);
         spawn('zerg_hydra', Math.floor((4 + wave * 0.3) * waveMult * coopCountMult * breathMult), Math.floor((30 + wave * 3) * coopHPMult), 100 + wave * 2, 12, 20);
         spawn('zerg_drone', Math.floor((5 + wave * 0.35) * waveMult * coopCountMult * breathMult), Math.floor((20 + wave * 2) * coopHPMult), 140 + wave * 3, 8, 15);
         spawn('zerg_roach', Math.floor((3 + wave * 0.25) * waveMult * coopCountMult * breathMult), Math.floor((60 + wave * 5) * coopHPMult), 75 + wave * 2, 25, 30);
@@ -1655,6 +1698,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     spawnPowerup(x, y, forcedType) {
+        // Performance limit: spawn from queue first to maintain MAX_ZERGS
+        this.spawnFromQueue();
+
         const types = ['damage', 'swarm', 'nuke', 'heal'];
         const type = forcedType || types[Phaser.Math.Between(0, types.length - 1)];
         const orb = this.powerupGroup.create(x, y, 'orb_' + type);
